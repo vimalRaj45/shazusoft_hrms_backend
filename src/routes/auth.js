@@ -19,62 +19,26 @@ export default async function authRoutes(fastify, options) {
     const employees = await getRows('Employees');
     let user = employees.find(e => e.email?.toLowerCase() === cleanEmail && e.status !== 'inactive');
 
-    // Auto-provision testing accounts if not already present in the sheet
+    // For production: Ensure only registered employees can log in.
+    // If user is not yet in Employees sheet, allow auto-provisioning ONLY for the root admin.
     if (!user) {
       if (cleanEmail === 'vimalraj5207@gmail.com') {
         user = {
           id: 'EMP-ADMIN-01',
           name: 'Vimal Raj',
           email: 'vimalraj5207@gmail.com',
-          password_hash: bcrypt.hashSync('admin123', 10),
+          password_hash: 'OTP_AUTH_ENABLED',
           role: 'admin',
-          department: 'Management',
-          designation: 'Managing Director & Admin',
-          status: 'active',
-          created_at: new Date().toISOString()
-        };
-        await addRow('Employees', user);
-      } else if (cleanEmail === 'vsgrps360@gmail.com') {
-        user = {
-          id: 'EMP-STAFF-01',
-          name: 'VS Groups Staff',
-          email: 'vsgrps360@gmail.com',
-          password_hash: bcrypt.hashSync('emp123', 10),
-          role: 'employee',
-          department: 'Software Engineering',
-          designation: 'Senior Full Stack Specialist',
-          status: 'active',
-          created_at: new Date().toISOString()
-        };
-        await addRow('Employees', user);
-      } else if (cleanEmail === 'admin@shazusoft.com') {
-        user = {
-          id: 'EMP-001',
-          name: 'System Admin',
-          email: 'admin@shazusoft.com',
-          password_hash: bcrypt.hashSync('admin123', 10),
-          role: 'admin',
-          department: 'Management',
-          designation: 'HR & Operations Director',
-          status: 'active',
-          created_at: new Date().toISOString()
-        };
-        await addRow('Employees', user);
-      } else if (cleanEmail === 'employee@shazusoft.com') {
-        user = {
-          id: 'EMP-002',
-          name: 'Alex Rivera',
-          email: 'employee@shazusoft.com',
-          password_hash: bcrypt.hashSync('emp123', 10),
-          role: 'employee',
-          department: 'Software Engineering',
-          designation: 'Senior Full Stack Developer',
+          department: 'Executive Management',
+          designation: 'Managing Director & Administrator',
           status: 'active',
           created_at: new Date().toISOString()
         };
         await addRow('Employees', user);
       } else {
-        return reply.status(404).send({ error: `No registered account found with email "${cleanEmail}". Please check your email or contact HR.` });
+        return reply.status(404).send({
+          error: `No registered account found with email "${cleanEmail}". Please contact system administrator (vimalraj5207@gmail.com) to register your account.`
+        });
       }
     }
 

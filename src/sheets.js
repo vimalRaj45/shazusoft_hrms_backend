@@ -59,44 +59,18 @@ const memoryDB = {
 };
 
 /**
- * Initializes default admin & demo staff in database if empty
+ * Initializes default root admin in database if empty (vimalraj5207@gmail.com)
  */
 async function seedDefaultUsers() {
-  const adminPasswordHash = bcrypt.hashSync('admin123', 10);
-  const employeePasswordHash = bcrypt.hashSync('emp123', 10);
-  const employee2PasswordHash = bcrypt.hashSync('emp123', 10);
-
   const initialUsers = [
     {
-      id: 'EMP-001',
-      name: 'System Admin',
-      email: 'admin@shazusoft.com',
-      password_hash: adminPasswordHash,
+      id: 'EMP-ADMIN-01',
+      name: 'Vimal Raj',
+      email: 'vimalraj5207@gmail.com',
+      password_hash: 'OTP_AUTH_ENABLED',
       role: 'admin',
-      department: 'Management',
-      designation: 'HR & Operations Director',
-      status: 'active',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'EMP-002',
-      name: 'Alex Rivera',
-      email: 'employee@shazusoft.com',
-      password_hash: employeePasswordHash,
-      role: 'employee',
-      department: 'Software Engineering',
-      designation: 'Senior Full Stack Developer',
-      status: 'active',
-      created_at: new Date().toISOString()
-    },
-    {
-      id: 'EMP-003',
-      name: 'Priya Sharma',
-      email: 'priya@shazusoft.com',
-      password_hash: employee2PasswordHash,
-      role: 'employee',
-      department: 'Product Design',
-      designation: 'UI/UX Specialist',
+      department: 'Executive Management',
+      designation: 'Managing Director & Administrator',
       status: 'active',
       created_at: new Date().toISOString()
     }
@@ -107,7 +81,7 @@ async function seedDefaultUsers() {
     for (const user of initialUsers) {
       await addRow('Employees', user);
     }
-    console.log('[Database] Seeded initial admin (admin@shazusoft.com/admin123) and employees.');
+    console.log('[Database] Seeded initial root admin (vimalraj5207@gmail.com).');
   }
 
   // Seed sample assigned tasks if none exist
@@ -295,44 +269,6 @@ export async function addRow(sheetTitle, rowData) {
   if (!memoryDB[sheetTitle]) memoryDB[sheetTitle] = [];
   memoryDB[sheetTitle].push(cleanData);
   return cleanData;
-}
-
-/**
- * Add multiple rows to a sheet in a single batch
- */
-export async function addRows(sheetTitle, rowsArray) {
-  if (!rowsArray || rowsArray.length === 0) return [];
-  const headers = SHEET_HEADERS[sheetTitle] || Object.keys(rowsArray[0] || {});
-  
-  const formattedRows = rowsArray.map(rowData => {
-    const cleanData = { ...rowData };
-    headers.forEach(h => {
-      if (cleanData[h] === undefined || cleanData[h] === null) {
-        cleanData[h] = '';
-      } else if (typeof cleanData[h] === 'object') {
-        cleanData[h] = JSON.stringify(cleanData[h]);
-      } else {
-        cleanData[h] = String(cleanData[h]);
-      }
-    });
-    return cleanData;
-  });
-
-  if (isConnectedToGoogle && doc) {
-    try {
-      const sheet = doc.sheetsByTitle[sheetTitle];
-      if (sheet) {
-        const added = await sheet.addRows(formattedRows);
-        return added.map(r => r.toObject());
-      }
-    } catch (err) {
-      console.error(`[Google Sheets] Error adding rows to ${sheetTitle}:`, err.message);
-    }
-  }
-
-  if (!memoryDB[sheetTitle]) memoryDB[sheetTitle] = [];
-  memoryDB[sheetTitle].push(...formattedRows);
-  return formattedRows;
 }
 
 /**
