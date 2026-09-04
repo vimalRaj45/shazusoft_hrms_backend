@@ -1,5 +1,4 @@
-import { initSheets, addRow, getRows } from './sheets.js';
-import bcrypt from 'bcryptjs';
+import { initSheets, addRows, getRows } from './sheets.js';
 
 async function seedFullBusinessData() {
   console.log('🚀 Starting Google Sheets Comprehensive Business Mock Data Seeding...');
@@ -9,313 +8,483 @@ async function seedFullBusinessData() {
     process.exit(1);
   }
 
-  // 1. Ensure Employees Exist
   const existingEmployees = await getRows('Employees');
   console.log(`Current employees in DB: ${existingEmployees.length}`);
 
-  const targetMonth = '2026-08';
+  const staffEmployees = existingEmployees.filter(e => e.role !== 'admin');
+  const targetStaffIds = staffEmployees.length > 0 
+    ? staffEmployees.map(e => ({ id: e.id, name: e.name }))
+    : [
+        { id: 'EMP-002', name: 'Alex Rivera' },
+        { id: 'EMP-003', name: 'Priya Sharma' },
+        { id: 'EMP-STAFF-01', name: 'VS Groups Staff' }
+      ];
 
-  // 2. Comprehensive Work Done Tasks (Realistic Business Projects & Activities)
-  const mockTasks = [
-    // Alex Rivera (Senior Full Stack Developer - EMP-002)
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-01',
-      project_name: 'E-Commerce Portal',
-      task_title: 'Stripe Payment Gateway Webhook Integration',
-      description: 'Implemented automated webhook listener for successful checkouts, invoice generation, and failure retries.',
-      estimated_hours: '4.0',
-      actual_hours: '4.5',
-      status: 'Completed',
-      remarks: 'Encountered TLS timeout on test sandbox; resolved with keep-alive socket config.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-01',
-      project_name: 'E-Commerce Portal',
-      task_title: 'Checkout Cart State Persistence',
-      description: 'Built Redux toolkit slice for syncing cart items across desktop and mobile browsers.',
-      estimated_hours: '3.0',
-      actual_hours: '3.0',
-      status: 'Completed',
-      remarks: 'Tested on Safari, Chrome, and Firefox.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-02',
-      project_name: 'HRMS Portal',
-      task_title: 'GPS Geofencing Distance Calculation Module',
-      description: 'Created backend Haversine formula calculation to verify employee coordinates against office boundary.',
-      estimated_hours: '3.5',
-      actual_hours: '3.0',
-      status: 'Completed',
-      remarks: 'Delivered 30 mins ahead of schedule.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-02',
-      project_name: 'HRMS Portal',
-      task_title: 'Google Sheets API Rate Limiter & Batching',
-      description: 'Implemented in-memory queue to batch write requests and prevent 429 quota exceed errors.',
-      estimated_hours: '4.0',
-      actual_hours: '5.0',
-      status: 'Completed',
-      remarks: 'Required additional retry logic for concurrent burst traffic.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-03',
-      project_name: 'Mobile App v2',
-      task_title: 'Push Notification Service for Order Updates',
-      description: 'Integrated Firebase Cloud Messaging (FCM) for real-time order tracking notifications.',
-      estimated_hours: '5.0',
-      actual_hours: '4.5',
-      status: 'Completed',
-      remarks: 'Tested background notifications on Android 14 and iOS 17.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-03',
-      project_name: 'Mobile App v2',
-      task_title: 'Biometric FaceID / Fingerprint Login',
-      description: 'Added React Native biometric authentication library with keychain secure token storage.',
-      estimated_hours: '3.0',
-      actual_hours: '3.0',
-      status: 'Completed',
-      remarks: 'All security standards validated.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-04',
-      project_name: 'Client Billing System',
-      task_title: 'Automated Invoice PDF Generation Engine',
-      description: 'Developed Puppeteer HTML-to-PDF template generator for monthly client timesheet summaries.',
-      estimated_hours: '6.0',
-      actual_hours: '7.5',
-      status: 'Completed',
-      remarks: 'Custom CSS print formatting took longer than expected.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-05',
-      project_name: 'E-Commerce Portal',
-      task_title: 'Product Catalog Elasticsearch Indexing',
-      description: 'Configured fuzzy search filters for auto-complete product queries with category ranking.',
-      estimated_hours: '4.0',
-      actual_hours: '4.0',
-      status: 'Completed',
-      remarks: 'Search query latency reduced by 65%.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-05',
-      project_name: 'DevOps & Infrastructure',
-      task_title: 'Docker Multi-Stage Build & CI Pipeline Optimization',
-      description: 'Refactored backend container Dockerfiles reducing production image size from 850MB to 140MB.',
-      estimated_hours: '3.5',
-      actual_hours: '3.5',
-      status: 'Completed',
-      remarks: 'Deployment speed doubled.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-06',
-      project_name: 'HRMS Portal',
-      task_title: 'End-of-Month Analytics Aggregator',
-      description: 'Wrote aggregation queries to compute attendance percentage, break time deductions, and task throughput.',
-      estimated_hours: '4.5',
-      actual_hours: '4.0',
-      status: 'Completed',
-      remarks: 'Ready for management dashboard review.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-07',
-      project_name: 'E-Commerce Portal',
-      task_title: 'Redis Caching for Trending Products API',
-      description: 'Configured Redis cache with 15-minute TTL to reduce database query load during peak traffic.',
-      estimated_hours: '3.0',
-      actual_hours: '2.5',
-      status: 'Completed',
-      remarks: 'Response time dropped from 180ms to 12ms.'
-    },
-    {
-      employee_id: 'EMP-002',
-      employee_name: 'Alex Rivera',
-      date: '2026-08-08',
-      project_name: 'Mobile App v2',
-      task_title: 'Offline Sync & SQLite Database Caching',
-      description: 'Enabled offline mode where user actions queue locally and sync automatically when internet restores.',
-      estimated_hours: '6.0',
-      actual_hours: '7.0',
-      status: 'In-Progress',
-      remarks: 'Resolving conflict resolution edge cases when online status switches.'
-    },
+  console.log(`Seeding demo data for staff members:`, targetStaffIds);
 
-    // Priya Sharma (UI/UX Product Designer - EMP-003)
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-01',
-      project_name: 'HRMS Portal',
-      task_title: 'Executive Dashboard UI/UX Wireframes & Component Specs',
-      description: 'Created high-fidelity Figma designs for Live Presence board, KPI cards, and Geofence status pills.',
-      estimated_hours: '5.0',
-      actual_hours: '5.0',
-      status: 'Completed',
-      remarks: 'Handed design tokens over to frontend dev team.'
-    },
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-01',
-      project_name: 'HRMS Portal',
-      task_title: 'Mobile View Responsiveness & Dark Mode Tokens',
-      description: 'Designed mobile drawer navigation and dark mode color contrast ratios for WCAG AA compliance.',
-      estimated_hours: '3.0',
-      actual_hours: '2.5',
-      status: 'Completed',
-      remarks: 'Delivered ahead of schedule.'
-    },
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-02',
-      project_name: 'E-Commerce Portal',
-      task_title: 'Checkout Flow Redesign & Usability Testing',
-      description: 'Conducted 5 user interviews on multi-step checkout; reduced form fields to streamline user drop-off.',
-      estimated_hours: '6.0',
-      actual_hours: '6.5',
-      status: 'Completed',
-      remarks: 'Identified payment gateway UX confusion; added visual card security badges.'
-    },
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-03',
-      project_name: 'Mobile App v2',
-      task_title: 'Onboarding Flow Animation & Micro-interactions',
-      description: 'Designed interactive Lottie onboarding animations for welcome screen and push notification permissions.',
-      estimated_hours: '4.5',
-      actual_hours: '4.0',
-      status: 'Completed',
-      remarks: 'Exported JSON assets ready for mobile dev integration.'
-    },
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-04',
-      project_name: 'Client Billing System',
-      task_title: 'Invoice PDF Design Template & Print Stylesheet',
-      description: 'Created corporate branded layout for downloadable timesheets and invoices.',
-      estimated_hours: '3.5',
-      actual_hours: '3.5',
-      status: 'Completed',
-      remarks: 'Aligned with Shazusoft brand guidelines.'
-    },
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-05',
-      project_name: 'E-Commerce Portal',
-      task_title: 'Product Reviews & Ratings Interactive Modal',
-      description: 'Designed photo upload preview, verified buyer badge, and star rating interactions.',
-      estimated_hours: '4.0',
-      actual_hours: '4.0',
-      status: 'Completed',
-      remarks: 'Approved by product manager.'
-    },
-    {
-      employee_id: 'EMP-003',
-      employee_name: 'Priya Sharma',
-      date: '2026-08-06',
-      project_name: 'Mobile App v2',
-      task_title: 'User Profile & Order Tracking Timeline Component',
-      description: 'Designed live tracking stepper showing Ordered -> Processed -> Dispatched -> Delivered.',
-      estimated_hours: '4.0',
-      actual_hours: '4.5',
-      status: 'Completed',
-      remarks: 'Added courier live map mockup.'
+  // ==========================================
+  // 1. WORK DONE TASKS (September 2026 Active Month + August)
+  // ==========================================
+  const existingWorkDone = await getRows('WorkDone');
+  const existingWorkDoneKeys = new Set(existingWorkDone.map(w => `${w.employee_id}_${w.date}_${w.task_title}`));
+
+  const workDoneRecords = [];
+  const addWork = (t) => {
+    const key = `${t.employee_id}_${t.date}_${t.task_title}`;
+    if (!existingWorkDoneKeys.has(key)) {
+      workDoneRecords.push({
+        id: `WD-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+        created_at: new Date().toISOString(),
+        ...t
+      });
+      existingWorkDoneKeys.add(key);
     }
-  ];
+  };
 
-  // 3. Comprehensive Attendance Records
-  const mockAttendance = [
-    // Alex Rivera
-    { id: 'ATT-20260801-EMP002', date: '2026-08-01', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:12:00', logout_time: '18:15:00', total_hours: '9.05', break_hours: '1.00', net_hours: '8.05', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260802-EMP002', date: '2026-08-02', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:05:00', logout_time: '18:00:00', total_hours: '8.92', break_hours: '0.75', net_hours: '8.17', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260803-EMP002', date: '2026-08-03', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:48:00', logout_time: '18:30:00', total_hours: '8.70', break_hours: '0.80', net_hours: '7.90', status: 'Late', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260804-EMP002', date: '2026-08-04', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:15:00', logout_time: '18:45:00', total_hours: '9.50', break_hours: '1.00', net_hours: '8.50', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260805-EMP002', date: '2026-08-05', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:10:00', logout_time: '18:00:00', total_hours: '8.83', break_hours: '0.75', net_hours: '8.08', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260806-EMP002', date: '2026-08-06', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:08:00', logout_time: '18:10:00', total_hours: '9.03', break_hours: '0.85', net_hours: '8.18', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260807-EMP002', date: '2026-08-07', employee_id: 'EMP-002', employee_name: 'Alex Rivera', login_time: '09:20:00', logout_time: '18:00:00', total_hours: '8.67', break_hours: '0.70', net_hours: '7.97', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
+  targetStaffIds.forEach(emp => {
+    // 2026-09-01 (Tuesday)
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-01',
+      project_name: 'HRMS Portal 2026',
+      task_title: 'API Authentication & Token Refresh Flow',
+      description: 'Implemented Axios request/response interceptors to automatically renew expired JWT tokens.',
+      estimated_hours: '4.0',
+      actual_hours: '4.5',
+      status: 'Completed',
+      remarks: 'Tested on multi-tab sessions. No session drops detected.'
+    });
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-01',
+      project_name: 'E-Commerce Platform',
+      task_title: 'Checkout Cart Item Price Calculation Unit Tests',
+      description: 'Wrote unit tests for tiered bulk quantity discounts and coupon code validation logic.',
+      estimated_hours: '3.5',
+      actual_hours: '3.5',
+      status: 'Completed',
+      remarks: 'All 24 test cases passing with 100% assertion coverage.'
+    });
 
-    // Priya Sharma
-    { id: 'ATT-20260801-EMP003', date: '2026-08-01', employee_id: 'EMP-003', employee_name: 'Priya Sharma', login_time: '09:15:00', logout_time: '18:00:00', total_hours: '8.75', break_hours: '0.80', net_hours: '7.95', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260802-EMP003', date: '2026-08-02', employee_id: 'EMP-003', employee_name: 'Priya Sharma', login_time: '09:10:00', logout_time: '18:20:00', total_hours: '9.17', break_hours: '0.75', net_hours: '8.42', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260803-EMP003', date: '2026-08-03', employee_id: 'EMP-003', employee_name: 'Priya Sharma', login_time: '09:05:00', logout_time: '18:00:00', total_hours: '8.92', break_hours: '0.70', net_hours: '8.22', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260804-EMP003', date: '2026-08-04', employee_id: 'EMP-003', employee_name: 'Priya Sharma', login_time: '09:18:00', logout_time: '18:00:00', total_hours: '8.70', break_hours: '0.75', net_hours: '7.95', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260805-EMP003', date: '2026-08-05', employee_id: 'EMP-003', employee_name: 'Priya Sharma', login_time: '09:12:00', logout_time: '18:15:00', total_hours: '9.05', break_hours: '0.80', net_hours: '8.25', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' },
-    { id: 'ATT-20260806-EMP003', date: '2026-08-06', employee_id: 'EMP-003', employee_name: 'Priya Sharma', login_time: '09:15:00', logout_time: '18:00:00', total_hours: '8.75', break_hours: '0.75', net_hours: '8.00', status: 'Present', punch_in_lat: '12.9716', punch_in_lng: '77.5945', punch_out_lat: '12.9716', punch_out_lng: '77.5945', in_geofence: 'TRUE' }
-  ];
+    // 2026-09-02 (Wednesday)
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-02',
+      project_name: 'HRMS Portal 2026',
+      task_title: 'Haversine Office Geofence GPS Verification Engine',
+      description: 'Created backend coordinate calculation to verify employee mobile GPS against office lat/long boundary.',
+      estimated_hours: '4.5',
+      actual_hours: '4.0',
+      status: 'Completed',
+      remarks: 'Verified accuracy within 15 meters radius.'
+    });
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-02',
+      project_name: 'Mobile App v2',
+      task_title: 'Push Notification Token Registration API',
+      description: 'Created backend endpoint to register Firebase FCM device tokens for real-time announcements.',
+      estimated_hours: '3.0',
+      actual_hours: '3.5',
+      status: 'Completed',
+      remarks: 'Integrated with Hostinger transaction email fallback.'
+    });
 
-  // 4. Breaks Taken
-  const mockBreaks = [
-    { id: 'BRK-001', attendance_id: 'ATT-20260801-EMP002', employee_id: 'EMP-002', employee_name: 'Alex Rivera', date: '2026-08-01', break_type: 'Tea Break', start_time: '11:15:00', end_time: '11:30:00', duration_minutes: '15', status: 'completed' },
-    { id: 'BRK-002', attendance_id: 'ATT-20260801-EMP002', employee_id: 'EMP-002', employee_name: 'Alex Rivera', date: '2026-08-01', break_type: 'Lunch Break', start_time: '13:30:00', end_time: '14:15:00', duration_minutes: '45', status: 'completed' },
-    { id: 'BRK-003', attendance_id: 'ATT-20260802-EMP002', employee_id: 'EMP-002', employee_name: 'Alex Rivera', date: '2026-08-02', break_type: 'Tea Break', start_time: '11:00:00', end_time: '11:15:00', duration_minutes: '15', status: 'completed' },
-    { id: 'BRK-004', attendance_id: 'ATT-20260802-EMP002', employee_id: 'EMP-002', employee_name: 'Alex Rivera', date: '2026-08-02', break_type: 'Lunch Break', start_time: '13:15:00', end_time: '13:45:00', duration_minutes: '30', status: 'completed' },
-    { id: 'BRK-005', attendance_id: 'ATT-20260803-EMP002', employee_id: 'EMP-002', employee_name: 'Alex Rivera', date: '2026-08-03', break_type: 'Tea Break', start_time: '11:30:00', end_time: '11:48:00', duration_minutes: '18', status: 'completed' },
-    { id: 'BRK-006', attendance_id: 'ATT-20260803-EMP002', employee_id: 'EMP-002', employee_name: 'Alex Rivera', date: '2026-08-03', break_type: 'Lunch Break', start_time: '13:30:00', end_time: '14:00:00', duration_minutes: '30', status: 'completed' }
-  ];
+    // 2026-09-03 (Thursday)
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-03',
+      project_name: 'HRMS Portal 2026',
+      task_title: 'Monthly Timesheet & Work Done Daily Dialog',
+      description: 'Built interactive modal showing detailed task breakdown for each calendar day in staff history.',
+      estimated_hours: '5.0',
+      actual_hours: '5.5',
+      status: 'Completed',
+      remarks: 'Added project chips, actual hours sum, and management remarks.'
+    });
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-03',
+      project_name: 'Client Billing System',
+      task_title: 'Timesheet CSV & PDF Export Utility',
+      description: 'Exported day-by-day attendance and tasks report formatted for client invoicing.',
+      estimated_hours: '3.0',
+      actual_hours: '2.5',
+      status: 'Completed',
+      remarks: 'Verified CSV opening smoothly in Excel.'
+    });
 
-  // 5. Leaves Records
-  const mockLeaves = [
-    { id: 'LEV-001', employee_id: 'EMP-002', employee_name: 'Alex Rivera', leave_type: 'Casual Leave', start_date: '2026-08-14', end_date: '2026-08-15', total_days: '2', reason: 'Personal family commitment', status: 'Approved', reviewed_by: 'System Admin' },
-    { id: 'LEV-002', employee_id: 'EMP-003', employee_name: 'Priya Sharma', leave_type: 'Sick Leave', start_date: '2026-08-20', end_date: '2026-08-20', total_days: '1', reason: 'Fever and doctor visit', status: 'Approved', reviewed_by: 'System Admin' },
-    { id: 'LEV-003', employee_id: 'EMP-002', employee_name: 'Alex Rivera', leave_type: 'Paid Leave', start_date: '2026-09-10', end_date: '2026-09-12', total_days: '3', reason: 'Annual vacation trip', status: 'Pending', reviewed_by: '' }
-  ];
+    // 2026-09-04 (Friday - Today)
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-04',
+      project_name: 'HRMS Portal 2026',
+      task_title: 'PWA Mobile Installation & Offline Cache Strategy',
+      description: 'Configured progressive web app service worker, manifest shortcuts, and first-time bottom-sheet banner.',
+      estimated_hours: '4.5',
+      actual_hours: '4.0',
+      status: 'Completed',
+      remarks: 'Tested installation banner on Chrome Mobile and Desktop.'
+    });
+    addWork({
+      employee_id: emp.id,
+      employee_name: emp.name,
+      date: '2026-09-04',
+      project_name: 'HRMS Portal 2026',
+      task_title: 'Global Search Palette (Ctrl+K) Indexing',
+      description: 'Implemented quick multi-sheet fuzzy search for finding employees, tasks, reports, and attendance records.',
+      estimated_hours: '4.0',
+      actual_hours: '4.0',
+      status: 'In-Progress',
+      remarks: 'Keyboard navigation arrows and enter shortcut working.'
+    });
+  });
 
-  // Insert WorkDone Tasks
-  console.log(`Writing ${mockTasks.length} WorkDone tasks to Google Sheets...`);
-  for (const t of mockTasks) {
-    await addRow('WorkDone', { id: `TASK-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`, created_at: new Date().toISOString(), ...t });
+  if (workDoneRecords.length > 0) {
+    console.log(`Writing ${workDoneRecords.length} WorkDone records in batch...`);
+    await addRows('WorkDone', workDoneRecords);
+  } else {
+    console.log('WorkDone records already up to date.');
   }
 
-  // Insert Attendance Records
-  console.log(`Writing ${mockAttendance.length} Attendance records to Google Sheets...`);
-  for (const a of mockAttendance) {
-    await addRow('Attendance', { created_at: new Date().toISOString(), ...a });
+  // ==========================================
+  // 2. ATTENDANCE RECORDS (September 1 - September 4, 2026)
+  // ==========================================
+  const existingAttendance = await getRows('Attendance');
+  const existingAttKeys = new Set(existingAttendance.map(a => `${a.employee_id}_${a.date}`));
+
+  const attendanceRecords = [];
+  targetStaffIds.forEach(emp => {
+    const dates = [
+      { date: '2026-09-01', in: '09:12:00', out: '18:15:00', tot: '9.05', brk: '0.80', net: '8.25', status: 'Present' },
+      { date: '2026-09-02', in: '09:20:00', out: '18:25:00', tot: '9.08', brk: '0.75', net: '8.33', status: 'Present' },
+      { date: '2026-09-03', in: '09:42:00', out: '18:30:00', tot: '8.80', brk: '0.70', net: '8.10', status: 'Late' },
+      { date: '2026-09-04', in: '09:15:00', out: '18:15:00', tot: '9.00', brk: '1.00', net: '8.00', status: 'Present' }
+    ];
+
+    dates.forEach(d => {
+      const key = `${emp.id}_${d.date}`;
+      if (!existingAttKeys.has(key)) {
+        attendanceRecords.push({
+          id: `ATT-${d.date.replace(/-/g, '')}-${emp.id}`,
+          date: d.date,
+          employee_id: emp.id,
+          employee_name: emp.name,
+          login_time: d.in,
+          logout_time: d.out,
+          total_hours: d.tot,
+          break_hours: d.brk,
+          net_hours: d.net,
+          status: d.status,
+          punch_in_lat: '11.656910',
+          punch_in_lng: '78.163598',
+          punch_out_lat: '11.656910',
+          punch_out_lng: '78.163598',
+          in_geofence: 'TRUE',
+          created_at: new Date().toISOString()
+        });
+        existingAttKeys.add(key);
+      }
+    });
+  });
+
+  if (attendanceRecords.length > 0) {
+    console.log(`Writing ${attendanceRecords.length} Attendance records in batch...`);
+    await addRows('Attendance', attendanceRecords);
+  } else {
+    console.log('Attendance records already up to date.');
   }
 
-  // Insert Break Records
-  console.log(`Writing ${mockBreaks.length} Break records to Google Sheets...`);
-  for (const b of mockBreaks) {
-    await addRow('Breaks', { created_at: new Date().toISOString(), ...b });
+  // ==========================================
+  // 3. BREAKS
+  // ==========================================
+  const existingBreaks = await getRows('Breaks');
+  if (existingBreaks.length < 5) {
+    const breakRecords = [];
+    targetStaffIds.forEach(emp => {
+      breakRecords.push({
+        id: `BRK-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        attendance_id: `ATT-20260904-${emp.id}`,
+        employee_id: emp.id,
+        employee_name: emp.name,
+        date: '2026-09-04',
+        break_type: 'Morning Tea',
+        start_time: '11:15:00',
+        end_time: '11:30:00',
+        duration_minutes: '15',
+        status: 'completed',
+        created_at: new Date().toISOString()
+      });
+      breakRecords.push({
+        id: `BRK-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        attendance_id: `ATT-20260904-${emp.id}`,
+        employee_id: emp.id,
+        employee_name: emp.name,
+        date: '2026-09-04',
+        break_type: 'Lunch Break',
+        start_time: '13:30:00',
+        end_time: '14:15:00',
+        duration_minutes: '45',
+        status: 'completed',
+        created_at: new Date().toISOString()
+      });
+    });
+    console.log(`Writing ${breakRecords.length} Break records in batch...`);
+    await addRows('Breaks', breakRecords);
   }
 
-  // Insert Leaves
-  console.log(`Writing ${mockLeaves.length} Leave records to Google Sheets...`);
-  for (const l of mockLeaves) {
-    await addRow('Leaves', { applied_at: new Date().toISOString(), ...l });
+  // ==========================================
+  // 4. LEAVES
+  // ==========================================
+  const existingLeaves = await getRows('Leaves');
+  if (existingLeaves.length < 3) {
+    const leaveRecords = [
+      {
+        id: `LEV-202609-001`,
+        employee_id: targetStaffIds[0].id,
+        employee_name: targetStaffIds[0].name,
+        leave_type: 'Casual Leave',
+        start_date: '2026-09-15',
+        end_date: '2026-09-16',
+        total_days: '2',
+        reason: 'Attending family wedding ceremony out of town.',
+        status: 'Approved',
+        reviewed_by: 'Vimal Raj (System Admin)',
+        applied_at: new Date().toISOString()
+      },
+      {
+        id: `LEV-202609-002`,
+        employee_id: targetStaffIds[1] ? targetStaffIds[1].id : targetStaffIds[0].id,
+        employee_name: targetStaffIds[1] ? targetStaffIds[1].name : targetStaffIds[0].name,
+        leave_type: 'Sick Leave',
+        start_date: '2026-09-22',
+        end_date: '2026-09-22',
+        total_days: '1',
+        reason: 'Scheduled health dental checkup.',
+        status: 'Pending',
+        reviewed_by: '',
+        applied_at: new Date().toISOString()
+      }
+    ];
+    console.log(`Writing ${leaveRecords.length} Leave records...`);
+    await addRows('Leaves', leaveRecords);
   }
 
-  console.log('✅ Google Sheets successfully populated with comprehensive business mock data!');
+  // ==========================================
+  // 5. REGULARIZATIONS
+  // ==========================================
+  const existingRegs = await getRows('Regularizations');
+  if (existingRegs.length < 2) {
+    const regRecords = [
+      {
+        id: `REG-202609-001`,
+        employee_id: targetStaffIds[0].id,
+        employee_name: targetStaffIds[0].name,
+        date: '2026-09-03',
+        requested_login_time: '09:15',
+        requested_logout_time: '18:15',
+        reason: 'Network connectivity delay at reception biometric punch.',
+        status: 'Approved',
+        reviewed_by_id: 'EMP-ADMIN-01',
+        reviewed_by_name: 'Vimal Raj',
+        review_remarks: 'Verified presence on office CCTV.',
+        applied_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: `REG-202609-002`,
+        employee_id: targetStaffIds[1] ? targetStaffIds[1].id : targetStaffIds[0].id,
+        employee_name: targetStaffIds[1] ? targetStaffIds[1].name : targetStaffIds[0].name,
+        date: '2026-09-02',
+        requested_login_time: '09:20',
+        requested_logout_time: '18:20',
+        reason: 'Client production deployment call started before portal punch.',
+        status: 'Pending',
+        reviewed_by_id: '',
+        reviewed_by_name: '',
+        review_remarks: '',
+        applied_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ];
+    console.log(`Writing ${regRecords.length} Regularization records...`);
+    await addRows('Regularizations', regRecords);
+  }
+
+  // ==========================================
+  // 6. WEEKLY REPORTS
+  // ==========================================
+  const existingReports = await getRows('Weekly_Reports');
+  if (existingReports.length < 2) {
+    const weeklyRecords = [
+      {
+        id: `WREP-2026-W36-${targetStaffIds[0].id}`,
+        employee_id: targetStaffIds[0].id,
+        employee_name: targetStaffIds[0].name,
+        department: 'Software Engineering',
+        week_number: '36',
+        year: '2026',
+        week_label: 'Week 36 (Aug 31 - Sep 04, 2026)',
+        submission_date: '2026-09-04',
+        accomplishments: 'Delivered PWA Service Worker caching, Geofence GPS verification, and Staff Timesheet View.',
+        challenges_blockers: 'Resolved cross-origin session cookie handling on staging reverse proxy.',
+        learnings_skills: 'Mastered Google Sheets API v4 batching and rate limiting architectures.',
+        next_week_goals: 'Implement real-time push notifications and automated monthly payroll summary export.',
+        status: 'Submitted',
+        created_at: new Date().toISOString()
+      }
+    ];
+    console.log(`Writing ${weeklyRecords.length} Weekly Report records...`);
+    await addRows('Weekly_Reports', weeklyRecords);
+  }
+
+  // ==========================================
+  // 7. SELF EVALUATIONS
+  // ==========================================
+  const existingEvals = await getRows('Self_Evaluations');
+  if (existingEvals.length < 2) {
+    const evalRecords = [
+      {
+        id: `EVAL-202608-${targetStaffIds[0].id}`,
+        employee_id: targetStaffIds[0].id,
+        employee_name: targetStaffIds[0].name,
+        designation: 'Senior Full Stack Engineer',
+        department: 'Engineering',
+        reporting_person: 'Vimal Raj',
+        review_month: '2026-08',
+        review_period: 'August 2026',
+        submission_date: '2026-08-31',
+        monthly_work_summary: 'Successfully developed and deployed core modules for Shazusoft HRMS Enterprise Portal.',
+        targets_tasks_json: JSON.stringify([
+          { task: 'GPS Geofencing Integration', target: '100% stable', achieved: 'Achieved with Haversine math' },
+          { task: 'Fastify Backend Routes', target: '11 route controllers', achieved: 'Completed and verified' }
+        ]),
+        ratings_json: JSON.stringify({
+          quality_of_work: 5,
+          job_knowledge: 5,
+          productivity: 4,
+          teamwork: 5,
+          initiative: 5
+        }),
+        overall_rating: '4.8',
+        key_accomplishments: 'Zero critical bugs reported in production. Reduced API response latency by 40%.',
+        challenges_faced: 'Managing Google Spreadsheet API rate quotas during simultaneous team testing.',
+        learning_development: 'Deepened expertise in Progressive Web Apps and Service Worker caching strategies.',
+        areas_for_improvement: 'Increase automated end-to-end Cypress test coverage.',
+        support_required: 'Cloud sandbox environment for staging CI/CD pipeline.',
+        goals_next_month: 'Deliver Mobile App v2 release and automated payroll calculation.',
+        employee_comments: 'Excited about the strong team velocity this month.',
+        employee_declaration: 'I hereby declare that the information provided in this self-evaluation is true and accurate.',
+        signature: targetStaffIds[0].name,
+        manager_feedback: 'Outstanding technical leadership and rapid execution. Well done!',
+        manager_rating: '5.0',
+        status: 'Reviewed',
+        created_at: new Date().toISOString()
+      }
+    ];
+    console.log(`Writing ${evalRecords.length} Self Evaluation records...`);
+    await addRows('Self_Evaluations', evalRecords);
+  }
+
+  // ==========================================
+  // 8. ASSIGNED TASKS (Kanban Board)
+  // ==========================================
+  const existingAssigned = await getRows('Assigned_Tasks');
+  if (existingAssigned.length < 4) {
+    const sampleAssigned = [
+      {
+        id: `TASK-KANBAN-001`,
+        task_title: 'Implement Geofencing & Google Sheets Sync',
+        project_name: 'HRMS Portal 2026',
+        description: 'Ensure Haversine GPS radius verification and 100% stable sync with Google Sheets API v4.',
+        assigned_by_id: 'EMP-ADMIN-01',
+        assigned_by_name: 'Vimal Raj',
+        assigned_to_id: targetStaffIds[0].id,
+        assigned_to_name: targetStaffIds[0].name,
+        priority: 'High',
+        due_date: '2026-09-08',
+        estimated_hours: '12',
+        actual_hours: '10',
+        progress: '85',
+        status: 'In-Progress',
+        work_notes: 'Completed GPS calculation and sheets sync; adding cross-browser fallback.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: `TASK-KANBAN-002`,
+        task_title: 'PWA Offline Storage and Manifest Icons',
+        project_name: 'HRMS Portal 2026',
+        description: 'Create responsive home screen app download experience on iOS and Android.',
+        assigned_by_id: 'EMP-ADMIN-01',
+        assigned_by_name: 'Vimal Raj',
+        assigned_to_id: targetStaffIds[0].id,
+        assigned_to_name: targetStaffIds[0].name,
+        priority: 'High',
+        due_date: '2026-09-05',
+        estimated_hours: '8',
+        actual_hours: '8',
+        progress: '100',
+        status: 'Completed',
+        work_notes: 'Service worker registered and bottom sheet banner active.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: `TASK-KANBAN-003`,
+        task_title: 'Global Search Keyboard Shortcuts (Ctrl+K)',
+        project_name: 'HRMS Portal 2026',
+        description: 'Search across staff timesheets, evaluations, and weekly reports instantly.',
+        assigned_by_id: 'EMP-ADMIN-01',
+        assigned_by_name: 'Vimal Raj',
+        assigned_to_id: targetStaffIds[1] ? targetStaffIds[1].id : targetStaffIds[0].id,
+        assigned_to_name: targetStaffIds[1] ? targetStaffIds[1].name : targetStaffIds[0].name,
+        priority: 'Medium',
+        due_date: '2026-09-10',
+        estimated_hours: '6',
+        actual_hours: '4',
+        progress: '70',
+        status: 'Review',
+        work_notes: 'PR submitted for review.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: `TASK-KANBAN-004`,
+        task_title: 'Automated Monthly Payroll Calculation',
+        project_name: 'HRMS Portal 2026',
+        description: 'Compute total payable days deducting unpaid leaves and excessive break overages.',
+        assigned_by_id: 'EMP-ADMIN-01',
+        assigned_by_name: 'Vimal Raj',
+        assigned_to_id: targetStaffIds[0].id,
+        assigned_to_name: targetStaffIds[0].name,
+        priority: 'High',
+        due_date: '2026-09-25',
+        estimated_hours: '16',
+        actual_hours: '0',
+        progress: '0',
+        status: 'Pending',
+        work_notes: 'Sprint planning item for next week.',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ];
+    console.log(`Writing ${sampleAssigned.length} Assigned Tasks records...`);
+    await addRows('Assigned_Tasks', sampleAssigned);
+  }
+
+  console.log('🎉 Google Sheets successfully populated with rich, comprehensive business demo data for all modules!');
   process.exit(0);
 }
 
 seedFullBusinessData().catch(err => {
-  console.error('Error seeding mock data:', err);
+  console.error('❌ Error during seeding:', err);
   process.exit(1);
 });

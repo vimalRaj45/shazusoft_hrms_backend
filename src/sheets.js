@@ -298,6 +298,44 @@ export async function addRow(sheetTitle, rowData) {
 }
 
 /**
+ * Add multiple rows to a sheet in a single batch
+ */
+export async function addRows(sheetTitle, rowsArray) {
+  if (!rowsArray || rowsArray.length === 0) return [];
+  const headers = SHEET_HEADERS[sheetTitle] || Object.keys(rowsArray[0] || {});
+  
+  const formattedRows = rowsArray.map(rowData => {
+    const cleanData = { ...rowData };
+    headers.forEach(h => {
+      if (cleanData[h] === undefined || cleanData[h] === null) {
+        cleanData[h] = '';
+      } else if (typeof cleanData[h] === 'object') {
+        cleanData[h] = JSON.stringify(cleanData[h]);
+      } else {
+        cleanData[h] = String(cleanData[h]);
+      }
+    });
+    return cleanData;
+  });
+
+  if (isConnectedToGoogle && doc) {
+    try {
+      const sheet = doc.sheetsByTitle[sheetTitle];
+      if (sheet) {
+        const added = await sheet.addRows(formattedRows);
+        return added.map(r => r.toObject());
+      }
+    } catch (err) {
+      console.error(`[Google Sheets] Error adding rows to ${sheetTitle}:`, err.message);
+    }
+  }
+
+  if (!memoryDB[sheetTitle]) memoryDB[sheetTitle] = [];
+  memoryDB[sheetTitle].push(...formattedRows);
+  return formattedRows;
+}
+
+/**
  * Update a specific row matching a field value (e.g. id)
  */
 export async function updateRow(sheetTitle, matchField, matchValue, updateData) {
