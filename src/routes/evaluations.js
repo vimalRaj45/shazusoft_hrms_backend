@@ -1,6 +1,12 @@
-import { getRows, addRow, updateRow } from '../sheets.js';
+import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format, startOfWeek, endOfWeek, getWeek, getYear, lastDayOfMonth, getDate } from 'date-fns';
+
+const normalizeDateStr = (d) => {
+  if (!d) return '';
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+};
 
 export default async function evaluationRoutes(fastify, options) {
   // GET /api/evaluations/monthly-status (Check if currently in the 5-day review window)
@@ -16,7 +22,7 @@ export default async function evaluationRoutes(fastify, options) {
 
     const evalRows = await getRows('Self_Evaluations');
     const mySubmissions = evalRows.filter(
-      e => e.employee_id === request.user.id && (e.review_month?.includes(currentMonthLabel) || e.submission_date?.startsWith(currentMonthKey))
+      e => (e.employee_id === request.user.id || e.employee_id === request.user.email) && (e.review_month?.includes(currentMonthLabel) || normalizeDateStr(e.submission_date).startsWith(currentMonthKey))
     );
 
     return {
@@ -38,7 +44,7 @@ export default async function evaluationRoutes(fastify, options) {
 
     const workDoneRows = await getRows('WorkDone');
     const userTasks = workDoneRows.filter(
-      w => w.employee_id === request.user.id && w.date?.startsWith(targetMonth)
+      w => (w.employee_id === request.user.id || w.employee_id === request.user.email) && normalizeDateStr(w.date).startsWith(targetMonth)
     );
 
     const prefilledTargets = userTasks.map(t => ({

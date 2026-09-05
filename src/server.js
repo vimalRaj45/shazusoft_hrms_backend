@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import { config } from './config.js';
-import { initSheets, getStatus } from './sheets.js';
+import { initDB, getStatus } from './db.js';
 
 import authRoutes from './routes/auth.js';
 import attendanceRoutes from './routes/attendance.js';
@@ -14,10 +14,13 @@ import evaluationRoutes from './routes/evaluations.js';
 import tasksRoutes from './routes/tasks.js';
 import communicationsRoutes from './routes/communications.js';
 import searchRoutes from './routes/search.js';
+import ticketsRoutes from './routes/tickets.js';
+import uploadRoutes from './routes/uploads.js';
 
 async function buildServer() {
   const fastify = Fastify({
-    logger: true
+    logger: true,
+    bodyLimit: 52428800 // 50MB for document & image uploads
   });
 
   // Setup Plugins
@@ -51,6 +54,8 @@ async function buildServer() {
   await fastify.register(tasksRoutes, { prefix: '/api/tasks' });
   await fastify.register(communicationsRoutes, { prefix: '/api/communications' });
   await fastify.register(searchRoutes, { prefix: '/api/search' });
+  await fastify.register(ticketsRoutes, { prefix: '/api/tickets' });
+  await fastify.register(uploadRoutes, { prefix: '/api/uploads' });
 
   return fastify;
 }
@@ -58,10 +63,10 @@ async function buildServer() {
 async function start() {
   try {
     console.log('----------------------------------------------------');
-    console.log('🚀 Initializing Shazusoft HRMS Backend...');
+    console.log('🚀 Initializing Shazusoft HRMS Backend (PostgreSQL)...');
     console.log('----------------------------------------------------');
 
-    await initSheets();
+    await initDB();
 
     const server = await buildServer();
     await server.listen({ port: config.port, host: '0.0.0.0' });

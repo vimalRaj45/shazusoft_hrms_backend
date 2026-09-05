@@ -1,4 +1,4 @@
-import { getRows, addRow, updateRow } from '../sheets.js';
+import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
@@ -82,6 +82,15 @@ export default async function leaveRoutes(fastify, options) {
 
     const startDateObj = parseISO(start_date);
     const endDateObj = parseISO(end_date);
+
+    if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+      return reply.status(400).send({ error: 'Invalid start or end date format.' });
+    }
+
+    if (endDateObj < startDateObj) {
+      return reply.status(400).send({ error: 'End date cannot be earlier than start date.' });
+    }
+
     const totalDays = Math.max(1, differenceInCalendarDays(endDateObj, startDateObj) + 1);
 
     // Check quota balance

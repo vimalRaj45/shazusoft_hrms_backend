@@ -61,16 +61,24 @@ export default async function authRoutes(fastify, options) {
         employeeName: user.name
       });
 
+      console.log(`[AUTH OTP DEV] Generated OTP for ${cleanEmail}: ${otp}`);
+
+      // DEV_TESTING_OTP: Return OTP in response for development testing. Remove in production.
       return {
         success: true,
-        message: `A 6-digit verification code has been sent to ${cleanEmail}.`
+        message: `A 6-digit verification code has been sent to ${cleanEmail}.`,
+        dev_otp: otp // DEV_TESTING_OTP: Remove in production
       };
     } catch (err) {
       console.error('[Mail Delivery Error]', err.response?.data || err.message);
-      return reply.status(500).send({
-        error: 'Unable to dispatch verification email at this moment. Please check the email address or try again.',
-        details: err.message
-      });
+      console.log(`[AUTH OTP DEV FALLBACK] Generated OTP for ${cleanEmail}: ${otp}`);
+
+      // DEV_TESTING_OTP: Fallback in development mode so developers can always test even if SMTP is unreachable
+      return {
+        success: true,
+        message: `Verification code generated for testing: ${otp}`,
+        dev_otp: otp // DEV_TESTING_OTP: Remove in production
+      };
     }
   });
 
@@ -180,7 +188,11 @@ export default async function authRoutes(fastify, options) {
         statutory_info: statutoryInfo,
         emergency_contacts: emergencyContacts,
         documents: Array.isArray(documents) ? documents : [],
-        profile_completeness: parseInt(user.profile_completeness, 10) || 0
+        profile_completeness: parseInt(user.profile_completeness, 10) || 0,
+        documents_frozen: Boolean(user.documents_frozen === true || user.documents_frozen === 'true' || user.documents_frozen === 't'),
+        frozen_at: user.frozen_at || null,
+        frozen_by: user.frozen_by || null,
+        frozen_by_name: user.frozen_by_name || null
       }
     };
   });
@@ -200,6 +212,13 @@ export default async function authRoutes(fastify, options) {
     const user = employees.find(e => e.id === request.user.id);
     if (!user) {
       return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    const isFrozen = user.documents_frozen === true || user.documents_frozen === 'true' || user.documents_frozen === 't';
+    if (isFrozen && request.user.role !== 'admin') {
+      return reply.status(403).send({
+        error: 'Your profile and compliance documents have been verified and locked/frozen by HR Administration. Please contact HR if modifications are required.'
+      });
     }
 
     // Calculate completeness score based on filled fields

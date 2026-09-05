@@ -1,14 +1,22 @@
-import { getRows, addRow, updateRow } from '../sheets.js';
+import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { verifyGeofence } from '../geofence.js';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
 
+const normalizeDateStr = (d) => {
+  if (!d) return '';
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+};
+
 export default async function attendanceRoutes(fastify, options) {
   // Check geofence status for given coords
   fastify.post('/check-geofence', { preHandler: [verifyAuth] }, async (request, reply) => {
-    const { lat, lng } = request.body || {};
-    const result = verifyGeofence(parseFloat(lat), parseFloat(lng));
-    return result;
+    const { lat, lng, latitude, longitude } = request.body || {};
+    const userLat = lat !== undefined ? lat : latitude;
+    const userLng = lng !== undefined ? lng : longitude;
+    const result = verifyGeofence(parseFloat(userLat), parseFloat(userLng));
+    return { ...result, in_geofence: result.inside };
   });
 
   // GET /api/attendance/today (Current user's status today)
@@ -30,19 +38,50 @@ export default async function attendanceRoutes(fastify, options) {
   // POST /api/attendance/punch-in
   fastify.post('/punch-in', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { lat, lng } = request.body || {};
-    const geo = verifyGeofence(parseFloat(lat), parseFloat(lng));
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const now = new Date();
+    const isSunday = now.getDay() === 0;
 
-    if (!geo.inside) {
-      return reply.status(403).send({
-        error: `Punch In rejected: ${geo.message}`,
-        geofence: geo
+    // Check holidays & working calendar overrides
+    const holidayRows = await getRows('Holidays');
+    const todayHoliday = holidayRows.find(h => h.date === todayStr);
+    const isWorkingSunday = isSunday && todayHoliday && (todayHoliday.type === 'Working Sunday' || todayHoliday.name?.toLowerCase().includes('working'));
+
+    if (isSunday && !isWorkingSunday) {
+      return reply.status(400).send({
+        error: 'Today is Sunday (Non-Working Day). Check-in is disabled unless marked as a Working Sunday by Administrator.'
       });
     }
 
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const nowTimeStr = format(new Date(), 'HH:mm:ss');
-    const now = new Date();
+    if (todayHoliday && !isWorkingSunday && todayHoliday.type !== 'Working Sunday') {
+      return reply.status(400).send({
+        error: `Today is a company holiday: "${todayHoliday.name}" (${todayHoliday.type || 'Holiday'}). Check-in is not required.`
+      });
+    }
 
+    // Check Employee Work Mode (Office vs WFH)
+    const employees = await getRows('Employees');
+    const employee = employees.find(e => e.id === request.user.id);
+    const isWfh = (employee?.work_mode === 'wfh') || (request.user?.work_mode === 'wfh');
+
+    let geo = null;
+    if (!isWfh) {
+      geo = verifyGeofence(parseFloat(lat), parseFloat(lng));
+      if (!geo.inside) {
+        return reply.status(403).send({
+          error: `Punch In rejected: ${geo.message}`,
+          geofence: geo
+        });
+      }
+    } else {
+      geo = {
+        inside: true,
+        isWfh: true,
+        message: 'Work From Home (WFH) mode active — GPS geofence bypassed.'
+      };
+    }
+
+    const nowTimeStr = format(now, 'HH:mm:ss');
     const attendanceRows = await getRows('Attendance');
     const existing = attendanceRows.find(
       r => r.employee_id === request.user.id && r.date === todayStr
@@ -70,17 +109,17 @@ export default async function attendanceRoutes(fastify, options) {
       break_hours: '0',
       net_hours: '0',
       status,
-      punch_in_lat: String(lat),
-      punch_in_lng: String(lng),
+      punch_in_lat: lat ? String(lat) : (isWfh ? 'WFH_REMOTE' : ''),
+      punch_in_lng: lng ? String(lng) : (isWfh ? 'WFH_REMOTE' : ''),
       punch_out_lat: '',
       punch_out_lng: '',
-      in_geofence: 'TRUE',
+      in_geofence: isWfh ? 'WFH' : 'TRUE',
       created_at: new Date().toISOString()
     };
 
     const saved = await addRow('Attendance', newRecord);
     return {
-      message: `Punch In successful (${status})!`,
+      message: `Punch In successful (${status}${isWfh ? ' • WFH Mode' : ''})!`,
       attendance: saved,
       geofence: geo
     };
@@ -89,13 +128,25 @@ export default async function attendanceRoutes(fastify, options) {
   // POST /api/attendance/punch-out
   fastify.post('/punch-out', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { lat, lng } = request.body || {};
-    const geo = verifyGeofence(parseFloat(lat), parseFloat(lng));
+    const employees = await getRows('Employees');
+    const employee = employees.find(e => e.id === request.user.id);
+    const isWfh = (employee?.work_mode === 'wfh') || (request.user?.work_mode === 'wfh');
 
-    if (!geo.inside) {
-      return reply.status(403).send({
-        error: `Punch Out rejected: ${geo.message}`,
-        geofence: geo
-      });
+    let geo = null;
+    if (!isWfh) {
+      geo = verifyGeofence(parseFloat(lat), parseFloat(lng));
+      if (!geo.inside) {
+        return reply.status(403).send({
+          error: `Punch Out rejected: ${geo.message}`,
+          geofence: geo
+        });
+      }
+    } else {
+      geo = {
+        inside: true,
+        isWfh: true,
+        message: 'Work From Home (WFH) mode active — GPS geofence bypassed.'
+      };
     }
 
     const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -126,12 +177,12 @@ export default async function attendanceRoutes(fastify, options) {
       total_hours: totalHours,
       break_hours: '0.00',
       net_hours: netHours,
-      punch_out_lat: String(lat),
-      punch_out_lng: String(lng)
+      punch_out_lat: lat ? String(lat) : (isWfh ? 'WFH_REMOTE' : ''),
+      punch_out_lng: lng ? String(lng) : (isWfh ? 'WFH_REMOTE' : '')
     });
 
     return {
-      message: 'Punch Out successful! Have a great evening.',
+      message: `Punch Out successful! Have a great evening (${isWfh ? 'WFH' : 'Office'}).`,
       attendance: updated,
       summary: {
         totalHours: `${totalHours} hrs`,
@@ -179,19 +230,23 @@ export default async function attendanceRoutes(fastify, options) {
     // Build a quick lookup set of holiday dates in this month
     const holidayMap = {};
     holidayRows.forEach(h => {
-      if (h.date) holidayMap[h.date] = h;
+      const hDate = normalizeDateStr(h.date);
+      if (hDate) holidayMap[hDate] = h;
     });
 
     const userAttendance = attendanceRows.filter(
-      r => r.employee_id === request.user.id && r.date && r.date.startsWith(targetMonthStr)
+      r => (r.employee_id === request.user.id || r.employee_id === request.user.email) &&
+           normalizeDateStr(r.date).startsWith(targetMonthStr)
     );
 
     const userLeaves = leaveRows.filter(
-      l => l.employee_id === request.user.id && (l.status === 'Approved' || l.status === 'approved')
+      l => (l.employee_id === request.user.id || l.employee_id === request.user.email) &&
+           (l.status === 'Approved' || l.status === 'approved')
     );
 
     const userWorkDone = workDoneRows.filter(
-      w => w.employee_id === request.user.id && w.date && w.date.startsWith(targetMonthStr)
+      w => (w.employee_id === request.user.id || w.employee_id === request.user.email) &&
+           normalizeDateStr(w.date).startsWith(targetMonthStr)
     );
 
     const days = [];
@@ -215,7 +270,7 @@ export default async function attendanceRoutes(fastify, options) {
       if (isSunday) sundaysCount++;
 
       // Find tasks logged for this day
-      const dayTasks = userWorkDone.filter(t => t.date === dateStr);
+      const dayTasks = userWorkDone.filter(t => normalizeDateStr(t.date) === dateStr);
       const dayTaskHours = dayTasks.reduce((acc, t) => acc + (parseFloat(t.actual_hours || t.estimated_hours || 0) || 0), 0);
 
       const baseDayMeta = {
@@ -233,6 +288,9 @@ export default async function attendanceRoutes(fastify, options) {
         task_hours: dayTaskHours.toFixed(1)
       };
 
+      const holidayInfo = holidayMap[dateStr];
+      const isWorkingSunday = isSunday && holidayInfo && (holidayInfo.type === 'Working Sunday' || holidayInfo.name?.toLowerCase().includes('working'));
+
       if (isFuture) {
         days.push({
           date: dateStr,
@@ -240,9 +298,10 @@ export default async function attendanceRoutes(fastify, options) {
           day_name: dayName,
           is_weekend: isWeekend,
           is_sunday: isSunday,
+          is_working_sunday: !!isWorkingSunday,
           is_future: true,
           is_today: false,
-          status: isSunday ? 'Sunday' : (isWeekend ? 'Weekend' : 'Upcoming'),
+          status: isWorkingSunday ? 'Working Sunday' : (isSunday ? 'Sunday' : (holidayInfo ? 'Holiday' : (isWeekend ? 'Weekend' : 'Upcoming'))),
           login_time: null,
           logout_time: null,
           total_hours: null,
@@ -250,16 +309,15 @@ export default async function attendanceRoutes(fastify, options) {
           ...baseDayMeta
         });
       } else {
-        const holidayInfo = holidayMap[dateStr];
-
-        // Sundays and Holidays are non-working — do NOT count toward pastDaysCount
-        if (isSunday) {
+        // If regular Sunday (not marked as Working Sunday), treat as non-working
+        if (isSunday && !isWorkingSunday) {
           days.push({
             date: dateStr,
             day_number: day,
             day_name: dayName,
             is_weekend: true,
             is_sunday: true,
+            is_working_sunday: false,
             is_future: false,
             is_today: isToday,
             status: 'Sunday',
@@ -269,7 +327,7 @@ export default async function attendanceRoutes(fastify, options) {
             net_hours: '0',
             ...baseDayMeta
           });
-        } else if (holidayInfo) {
+        } else if (holidayInfo && !isWorkingSunday) {
           holidaysCount++;
           days.push({
             date: dateStr,
@@ -290,9 +348,14 @@ export default async function attendanceRoutes(fastify, options) {
             ...baseDayMeta
           });
         } else {
+          // Regular Working Day or Designated Working Sunday
           pastDaysCount++;
-          const record = userAttendance.find(r => r.date === dateStr);
-          const leave = userLeaves.find(l => dateStr >= l.start_date && dateStr <= l.end_date);
+          const record = userAttendance.find(r => normalizeDateStr(r.date) === dateStr);
+          const leave = userLeaves.find(l => {
+            const s = normalizeDateStr(l.start_date);
+            const e = normalizeDateStr(l.end_date || l.start_date);
+            return dateStr >= s && dateStr <= e;
+          });
 
           if (record) {
             const hours = parseFloat(record.net_hours || record.total_hours || '0');
@@ -306,7 +369,8 @@ export default async function attendanceRoutes(fastify, options) {
               day_number: day,
               day_name: dayName,
               is_weekend: isWeekend,
-              is_sunday: false,
+              is_sunday: isSunday,
+              is_working_sunday: !!isWorkingSunday,
               is_future: false,
               is_today: isToday,
               status: record.status || 'Present',
@@ -324,28 +388,15 @@ export default async function attendanceRoutes(fastify, options) {
               day_number: day,
               day_name: dayName,
               is_weekend: isWeekend,
-              is_sunday: false,
+              is_sunday: isSunday,
+              is_working_sunday: !!isWorkingSunday,
+              is_leave: true,
               is_future: false,
               is_today: isToday,
-              status: 'Approved Leave',
+              status: `On Leave (${leave.leave_type})`,
+              leave_id: leave.id,
               leave_type: leave.leave_type,
-              leave_reason: leave.reason || '',
-              login_time: null,
-              logout_time: null,
-              total_hours: '0',
-              net_hours: '0',
-              ...baseDayMeta
-            });
-          } else if (isWeekend) {
-            days.push({
-              date: dateStr,
-              day_number: day,
-              day_name: dayName,
-              is_weekend: true,
-              is_sunday: false,
-              is_future: false,
-              is_today: isToday,
-              status: 'Weekend',
+              leave_reason: leave.reason,
               login_time: null,
               logout_time: null,
               total_hours: '0',
@@ -353,15 +404,17 @@ export default async function attendanceRoutes(fastify, options) {
               ...baseDayMeta
             });
           } else {
+            // Absent on working day or working Sunday
             days.push({
               date: dateStr,
               day_number: day,
               day_name: dayName,
-              is_weekend: false,
-              is_sunday: false,
+              is_weekend: isWeekend,
+              is_sunday: isSunday,
+              is_working_sunday: !!isWorkingSunday,
               is_future: false,
               is_today: isToday,
-              status: isToday ? 'Not Punched Yet' : 'Absent',
+              status: isToday ? 'Pending / Not Punched In' : 'Absent',
               login_time: null,
               logout_time: null,
               total_hours: '0',
@@ -378,6 +431,21 @@ export default async function attendanceRoutes(fastify, options) {
     const totalTasksLogged = userWorkDone.length;
     const totalTaskHours = userWorkDone.reduce((acc, t) => acc + (parseFloat(t.actual_hours || t.estimated_hours || 0) || 0), 0).toFixed(1);
 
+    const summary = {
+      totalDays: lastDayOfMonth,
+      pastDaysCount,
+      presentDaysCount,
+      lateCount,
+      onTimePercent,
+      leaveDaysCount,
+      sundaysCount,
+      holidaysCount,
+      totalWorkingHours: totalWorkingHoursNum.toFixed(1),
+      avgHoursPerDay: avgDailyHours,
+      totalTasksLogged,
+      totalTaskHours
+    };
+
     return {
       month: targetMonthStr,
       month_label: format(startDate, 'MMMM yyyy'),
@@ -393,6 +461,7 @@ export default async function attendanceRoutes(fastify, options) {
       avg_hours_per_day: avgDailyHours,
       total_tasks_completed: totalTasksLogged,
       total_task_logged_hours: totalTaskHours,
+      summary,
       days
     };
   });
@@ -419,7 +488,7 @@ export default async function attendanceRoutes(fastify, options) {
 
     // Find target employee
     const targetEmpId = employee_id || employeeRows.find(e => e.role !== 'admin')?.id || employeeRows[0]?.id;
-    const targetEmp = employeeRows.find(e => e.id === targetEmpId) || null;
+    const targetEmp = employeeRows.find(e => e.id === targetEmpId || e.email === targetEmpId) || employeeRows[0] || null;
 
     if (!targetEmp) {
       return reply.status(404).send({ error: 'Employee not found.' });
@@ -428,19 +497,23 @@ export default async function attendanceRoutes(fastify, options) {
     // Build holiday lookup map
     const holidayMap = {};
     holidayRows.forEach(h => {
-      if (h.date) holidayMap[h.date] = h;
+      const hDate = normalizeDateStr(h.date);
+      if (hDate) holidayMap[hDate] = h;
     });
 
     const userAttendance = attendanceRows.filter(
-      r => r.employee_id === targetEmpId && r.date && r.date.startsWith(targetMonthStr)
+      r => (r.employee_id === targetEmp.id || r.employee_id === targetEmp.email || r.employee_name === targetEmp.name) &&
+           normalizeDateStr(r.date).startsWith(targetMonthStr)
     );
 
     const userLeaves = leaveRows.filter(
-      l => l.employee_id === targetEmpId && (l.status === 'Approved' || l.status === 'approved')
+      l => (l.employee_id === targetEmp.id || l.employee_id === targetEmp.email) &&
+           (l.status === 'Approved' || l.status === 'approved')
     );
 
     const userWorkDone = workDoneRows.filter(
-      w => w.employee_id === targetEmpId && w.date && w.date.startsWith(targetMonthStr)
+      w => (w.employee_id === targetEmp.id || w.employee_id === targetEmp.email || w.employee_name === targetEmp.name) &&
+           normalizeDateStr(w.date).startsWith(targetMonthStr)
     );
 
     const days = [];
@@ -464,7 +537,7 @@ export default async function attendanceRoutes(fastify, options) {
       if (isSunday) sundaysCount++;
 
       // Find tasks logged for this day
-      const dayTasks = userWorkDone.filter(t => t.date === dateStr);
+      const dayTasks = userWorkDone.filter(t => normalizeDateStr(t.date) === dateStr);
       const dayTaskHours = dayTasks.reduce((acc, t) => acc + (parseFloat(t.actual_hours || t.estimated_hours || 0) || 0), 0);
 
       const baseDayMeta = {
@@ -482,6 +555,9 @@ export default async function attendanceRoutes(fastify, options) {
         task_hours: dayTaskHours.toFixed(1)
       };
 
+      const holidayInfo = holidayMap[dateStr];
+      const isWorkingSunday = isSunday && holidayInfo && (holidayInfo.type === 'Working Sunday' || holidayInfo.name?.toLowerCase().includes('working'));
+
       if (isFuture) {
         days.push({
           date: dateStr,
@@ -489,9 +565,10 @@ export default async function attendanceRoutes(fastify, options) {
           day_name: dayName,
           is_weekend: isWeekend,
           is_sunday: isSunday,
+          is_working_sunday: !!isWorkingSunday,
           is_future: true,
           is_today: false,
-          status: isSunday ? 'Sunday' : (isWeekend ? 'Weekend' : 'Upcoming'),
+          status: isWorkingSunday ? 'Working Sunday' : (isSunday ? 'Sunday' : (holidayInfo ? 'Holiday' : (isWeekend ? 'Weekend' : 'Upcoming'))),
           login_time: null,
           logout_time: null,
           total_hours: null,
@@ -499,15 +576,14 @@ export default async function attendanceRoutes(fastify, options) {
           ...baseDayMeta
         });
       } else {
-        const holidayInfo = holidayMap[dateStr];
-
-        if (isSunday) {
+        if (isSunday && !isWorkingSunday) {
           days.push({
             date: dateStr,
             day_number: day,
             day_name: dayName,
             is_weekend: true,
             is_sunday: true,
+            is_working_sunday: false,
             is_future: false,
             is_today: isToday,
             status: 'Sunday',
@@ -517,7 +593,7 @@ export default async function attendanceRoutes(fastify, options) {
             net_hours: '0',
             ...baseDayMeta
           });
-        } else if (holidayInfo) {
+        } else if (holidayInfo && !isWorkingSunday) {
           holidaysCount++;
           days.push({
             date: dateStr,
@@ -539,8 +615,12 @@ export default async function attendanceRoutes(fastify, options) {
           });
         } else {
           pastDaysCount++;
-          const record = userAttendance.find(r => r.date === dateStr);
-          const leave = userLeaves.find(l => dateStr >= l.start_date && dateStr <= l.end_date);
+          const record = userAttendance.find(r => normalizeDateStr(r.date) === dateStr);
+          const leave = userLeaves.find(l => {
+            const s = normalizeDateStr(l.start_date);
+            const e = normalizeDateStr(l.end_date || l.start_date);
+            return dateStr >= s && dateStr <= e;
+          });
 
           if (record) {
             const hours = parseFloat(record.net_hours || record.total_hours || '0');
@@ -554,7 +634,8 @@ export default async function attendanceRoutes(fastify, options) {
               day_number: day,
               day_name: dayName,
               is_weekend: isWeekend,
-              is_sunday: false,
+              is_sunday: isSunday,
+              is_working_sunday: !!isWorkingSunday,
               is_future: false,
               is_today: isToday,
               status: record.status || 'Present',
@@ -572,28 +653,15 @@ export default async function attendanceRoutes(fastify, options) {
               day_number: day,
               day_name: dayName,
               is_weekend: isWeekend,
-              is_sunday: false,
+              is_sunday: isSunday,
+              is_working_sunday: !!isWorkingSunday,
+              is_leave: true,
               is_future: false,
               is_today: isToday,
-              status: 'Approved Leave',
+              status: `On Leave (${leave.leave_type})`,
+              leave_id: leave.id,
               leave_type: leave.leave_type,
-              leave_reason: leave.reason || '',
-              login_time: null,
-              logout_time: null,
-              total_hours: '0',
-              net_hours: '0',
-              ...baseDayMeta
-            });
-          } else if (isWeekend) {
-            days.push({
-              date: dateStr,
-              day_number: day,
-              day_name: dayName,
-              is_weekend: true,
-              is_sunday: false,
-              is_future: false,
-              is_today: isToday,
-              status: 'Weekend',
+              leave_reason: leave.reason,
               login_time: null,
               logout_time: null,
               total_hours: '0',
@@ -605,11 +673,12 @@ export default async function attendanceRoutes(fastify, options) {
               date: dateStr,
               day_number: day,
               day_name: dayName,
-              is_weekend: false,
-              is_sunday: false,
+              is_weekend: isWeekend,
+              is_sunday: isSunday,
+              is_working_sunday: !!isWorkingSunday,
               is_future: false,
               is_today: isToday,
-              status: isToday ? 'Not Punched Yet' : 'Absent',
+              status: isToday ? 'Pending / Not Punched In' : 'Absent',
               login_time: null,
               logout_time: null,
               total_hours: '0',
@@ -625,6 +694,21 @@ export default async function attendanceRoutes(fastify, options) {
     const onTimePercent = presentDaysCount > 0 ? Math.round(((presentDaysCount - lateCount) / presentDaysCount) * 100) : 100;
     const totalTasksLogged = userWorkDone.length;
     const totalTaskHours = userWorkDone.reduce((acc, t) => acc + (parseFloat(t.actual_hours || t.estimated_hours || 0) || 0), 0).toFixed(1);
+
+    const staffSummary = {
+      totalDays: lastDayOfMonth,
+      pastDaysCount,
+      presentDaysCount,
+      lateCount,
+      onTimePercent,
+      leaveDaysCount,
+      sundaysCount,
+      holidaysCount,
+      totalWorkingHours: totalWorkingHoursNum.toFixed(1),
+      avgHoursPerDay: avgDailyHours,
+      totalTasksLogged,
+      totalTaskHours
+    };
 
     return {
       employee: {
@@ -649,6 +733,7 @@ export default async function attendanceRoutes(fastify, options) {
       avg_hours_per_day: avgDailyHours,
       total_tasks_completed: totalTasksLogged,
       total_task_logged_hours: totalTaskHours,
+      summary: staffSummary,
       days
     };
   });

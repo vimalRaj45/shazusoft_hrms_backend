@@ -1,4 +1,4 @@
-import { getRows } from '../sheets.js';
+import { getRows } from '../db.js';
 import { verifyAuth } from '../auth.js';
 
 export default async function searchRoutes(fastify, options) {

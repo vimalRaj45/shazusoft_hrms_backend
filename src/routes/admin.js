@@ -1,4 +1,4 @@
-import { getRows, addRow, updateRow, deleteRow, getStatus } from '../sheets.js';
+import { getRows, addRow, updateRow, deleteRow, getStatus } from '../db.js';
 import { verifyAdmin, hashPassword } from '../auth.js';
 import { runtimeSettings } from '../config.js';
 import { format } from 'date-fns';
@@ -53,16 +53,36 @@ export default async function adminRoutes(fastify, options) {
     };
   });
 
-  // Get all employees
+  // Get all employees with full compliance records & documents
   fastify.get('/employees', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const rows = await getRows('Employees');
-    const sanitized = rows.map(({ password_hash, ...rest }) => rest);
+    const sanitized = rows.map(({ password_hash, ...rest }) => {
+      let personalInfo = {};
+      let statutoryInfo = {};
+      let emergencyContacts = {};
+      let documents = [];
+
+      try { personalInfo = rest.personal_info ? (typeof rest.personal_info === 'string' ? JSON.parse(rest.personal_info) : rest.personal_info) : {}; } catch (e) {}
+      try { statutoryInfo = rest.statutory_info ? (typeof rest.statutory_info === 'string' ? JSON.parse(rest.statutory_info) : rest.statutory_info) : {}; } catch (e) {}
+      try { emergencyContacts = rest.emergency_contacts ? (typeof rest.emergency_contacts === 'string' ? JSON.parse(rest.emergency_contacts) : rest.emergency_contacts) : {}; } catch (e) {}
+      try { documents = rest.documents_json ? (typeof rest.documents_json === 'string' ? JSON.parse(rest.documents_json) : rest.documents_json) : []; } catch (e) {}
+
+      return {
+        ...rest,
+        personal_info: personalInfo,
+        statutory_info: statutoryInfo,
+        emergency_contacts: emergencyContacts,
+        documents: Array.isArray(documents) ? documents : [],
+        profile_completeness: parseInt(rest.profile_completeness, 10) || 0,
+        documents_frozen: Boolean(rest.documents_frozen === true || rest.documents_frozen === 'true' || rest.documents_frozen === 't')
+      };
+    });
     return { employees: sanitized };
   });
 
   // Create new employee (OTP Auth enabled - password not needed)
   fastify.post('/employees', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { name, email, role = 'employee', department = 'General', designation = 'Staff' } = request.body || {};
+    const { name, email, role = 'employee', department = 'General', designation = 'Staff', work_mode = 'office' } = request.body || {};
 
     if (!name || !email) {
       return reply.status(400).send({ error: 'Name and email are required.' });
@@ -83,6 +103,7 @@ export default async function adminRoutes(fastify, options) {
       role,
       department,
       designation,
+      work_mode: work_mode === 'wfh' ? 'wfh' : 'office',
       status: 'active',
       created_at: new Date().toISOString()
     };
@@ -99,7 +120,7 @@ export default async function adminRoutes(fastify, options) {
   // Update employee
   fastify.put('/employees/:id', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { id } = request.params;
-    const { name, email, role, department, designation, status, password } = request.body || {};
+    const { name, email, role, department, designation, status, password, work_mode } = request.body || {};
 
     const updateData = {};
     if (name) updateData.name = name;
@@ -108,6 +129,7 @@ export default async function adminRoutes(fastify, options) {
     if (department) updateData.department = department;
     if (designation) updateData.designation = designation;
     if (status) updateData.status = status;
+    if (work_mode) updateData.work_mode = work_mode === 'wfh' ? 'wfh' : 'office';
     if (password) updateData.password_hash = hashPassword(password);
 
     const updated = await updateRow('Employees', 'id', id, updateData);
@@ -117,6 +139,57 @@ export default async function adminRoutes(fastify, options) {
 
     const { password_hash, ...clean } = updated;
     return { message: 'Employee updated successfully', employee: clean };
+  });
+
+  // Quick toggle work mode (office <-> wfh)
+  fastify.patch('/employees/:id/work-mode', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const { work_mode } = request.body || {};
+
+    const targetMode = work_mode === 'wfh' ? 'wfh' : 'office';
+    const updated = await updateRow('Employees', 'id', id, { work_mode: targetMode });
+    if (!updated) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    const { password_hash, ...clean } = updated;
+    return {
+      message: `Work mode updated to ${targetMode === 'wfh' ? 'Work From Home (WFH)' : 'In-Office'} for ${clean.name}.`,
+      employee: clean
+    };
+  });
+
+  // Freeze / Unfreeze employee compliance documents and profile records
+  fastify.post('/employees/:id/freeze-documents', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const { frozen = true, remarks = '' } = request.body || {};
+
+    const employees = await getRows('Employees');
+    const user = employees.find(e => e.id === id);
+    if (!user) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    const freezePayload = {
+      documents_frozen: Boolean(frozen),
+      frozen_at: frozen ? new Date().toISOString() : null,
+      frozen_by: frozen ? request.user.id : null,
+      frozen_by_name: frozen ? request.user.name : null
+    };
+
+    const updated = await updateRow('Employees', 'id', id, freezePayload);
+    const { password_hash, ...clean } = updated;
+
+    return {
+      success: true,
+      message: frozen
+        ? `Compliance documents & profile for ${clean.name} have been FROZEN and verified.`
+        : `Compliance documents & profile for ${clean.name} have been UNFROZEN for employee edits.`,
+      employee: {
+        ...clean,
+        documents_frozen: Boolean(clean.documents_frozen === true || clean.documents_frozen === 'true' || clean.documents_frozen === 't')
+      }
+    };
   });
 
   // GET /api/admin/settings — Read-only geofence info (values come from .env only)
@@ -133,22 +206,22 @@ export default async function adminRoutes(fastify, options) {
   });
 
   // ─────────────────────────────────────────────────────────────
-  //  HOLIDAY MANAGEMENT
+  //  HOLIDAY & CALENDAR OVERRIDE MANAGEMENT
   // ─────────────────────────────────────────────────────────────
 
-  // GET /api/admin/holidays — List all admin-defined holidays
+  // GET /api/admin/holidays — List all admin-defined holidays & Sunday overrides
   fastify.get('/holidays', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const rows = await getRows('Holidays');
     rows.sort((a, b) => (a.date > b.date ? 1 : -1));
     return { holidays: rows };
   });
 
-  // POST /api/admin/holidays — Add a new holiday
+  // POST /api/admin/holidays — Add a new holiday or Sunday working day override
   fastify.post('/holidays', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { date, name, type = 'Public Holiday' } = request.body || {};
 
     if (!date || !name) {
-      return reply.status(400).send({ error: 'Both date (yyyy-MM-dd) and name are required.' });
+      return reply.status(400).send({ error: 'Both date (yyyy-MM-dd) and name/description are required.' });
     }
 
     // Validate date format
@@ -156,17 +229,11 @@ export default async function adminRoutes(fastify, options) {
       return reply.status(400).send({ error: 'Date must be in yyyy-MM-dd format.' });
     }
 
-    // Reject Sundays — already automatically non-working
-    const dayOfWeek = new Date(date).getDay();
-    if (dayOfWeek === 0) {
-      return reply.status(400).send({ error: 'Sundays are automatically non-working days. No need to add them.' });
-    }
-
     // Reject duplicate dates
     const existing = await getRows('Holidays');
     const duplicate = existing.find(h => h.date === date);
     if (duplicate) {
-      return reply.status(400).send({ error: `A holiday already exists on ${date}: "${duplicate.name}"` });
+      return reply.status(400).send({ error: `A calendar entry already exists on ${date}: "${duplicate.name}" (${duplicate.type})` });
     }
 
     const holiday = {
@@ -179,7 +246,7 @@ export default async function adminRoutes(fastify, options) {
     };
 
     const saved = await addRow('Holidays', holiday);
-    return { message: `Holiday "${name}" added for ${date}.`, holiday: saved };
+    return { message: `Calendar entry "${name}" (${type}) configured for ${date}.`, holiday: saved };
   });
 
   // DELETE /api/admin/holidays/:date — Remove a holiday by date

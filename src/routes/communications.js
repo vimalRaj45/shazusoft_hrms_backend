@@ -1,4 +1,4 @@
-import { getRows, addRow, updateRow } from '../sheets.js';
+import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInMinutes } from 'date-fns';

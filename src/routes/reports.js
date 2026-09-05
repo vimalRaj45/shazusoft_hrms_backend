@@ -1,7 +1,13 @@
-import { getRows, addRow } from '../sheets.js';
+import { getRows, addRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { generateMonthlyAIReport } from '../mistral.js';
 import { format } from 'date-fns';
+
+const normalizeDateStr = (d) => {
+  if (!d) return '';
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+};
 
 export default async function reportsRoutes(fastify, options) {
   // GET /api/reports/employee-full-report (Comprehensive Business Analysis Without AI)
@@ -10,48 +16,43 @@ export default async function reportsRoutes(fastify, options) {
     const targetEmpId = request.user.role === 'admin' && employee_id ? employee_id : request.user.id;
     const targetMonth = month_year || format(new Date(), 'yyyy-MM');
 
-    // Fetch all related data from Google Sheets
-    const [employees, attendance, workDone, breaks, leaves, permissions] = await Promise.all([
+    // Fetch all related data
+    const [employees, attendance, workDone, leaves, permissions] = await Promise.all([
       getRows('Employees'),
       getRows('Attendance'),
       getRows('WorkDone'),
-      getRows('Breaks'),
       getRows('Leaves'),
       getRows('Permissions')
     ]);
 
-    const employee = employees.find(e => e.id === targetEmpId);
+    const employee = employees.find(e => e.id === targetEmpId || e.email === targetEmpId);
     if (!employee) {
       return reply.status(404).send({ error: 'Employee not found.' });
     }
 
     // Filter data for target month
     const empAttendance = attendance
-      .filter(a => a.employee_id === targetEmpId && a.date?.startsWith(targetMonth))
+      .filter(a => (a.employee_id === employee.id || a.employee_id === employee.email || a.employee_name === employee.name) && normalizeDateStr(a.date).startsWith(targetMonth))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     const empWorkDone = workDone
-      .filter(w => w.employee_id === targetEmpId && w.date?.startsWith(targetMonth))
+      .filter(w => (w.employee_id === employee.id || w.employee_id === employee.email || w.employee_name === employee.name) && normalizeDateStr(w.date).startsWith(targetMonth))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    const empBreaks = breaks
-      .filter(b => b.employee_id === targetEmpId && b.date?.startsWith(targetMonth));
-
     const empLeaves = leaves
-      .filter(l => l.employee_id === targetEmpId && (l.start_date?.startsWith(targetMonth) || l.applied_at?.startsWith(targetMonth)));
+      .filter(l => (l.employee_id === employee.id || l.employee_id === employee.email) && (normalizeDateStr(l.start_date).startsWith(targetMonth) || normalizeDateStr(l.applied_at).startsWith(targetMonth)));
 
     const empPermissions = permissions
-      .filter(p => p.employee_id === targetEmpId && p.date?.startsWith(targetMonth));
+      .filter(p => (p.employee_id === employee.id || p.employee_id === employee.email) && normalizeDateStr(p.date).startsWith(targetMonth));
 
     // Numerical Metrics
     const totalDaysLogged = empAttendance.length;
-    const presentDays = empAttendance.filter(a => a.status === 'Present' || a.status === 'Verified Office Present').length;
+    const presentDays = empAttendance.filter(a => ['Present', 'Verified Office Present', 'Present & Working', 'Punched Out', 'Regularized', 'Late', 'Half-Day'].includes(a.status) || a.in_geofence === 'TRUE' || a.in_geofence === 'WFH').length;
     const lateDays = empAttendance.filter(a => a.status === 'Late').length;
     const halfDays = empAttendance.filter(a => a.status === 'Half-Day').length;
 
-    const totalHoursGross = empAttendance.reduce((acc, a) => acc + (parseFloat(a.total_hours) || 0), 0);
-    const totalBreakHours = empAttendance.reduce((acc, a) => acc + (parseFloat(a.break_hours) || 0), 0);
-    const totalNetHours = empAttendance.reduce((acc, a) => acc + (parseFloat(a.net_hours) || 0), 0);
+    const totalHoursGross = empAttendance.reduce((acc, a) => acc + (parseFloat(a.total_hours) || parseFloat(a.net_hours) || 0), 0);
+    const totalNetHours = empAttendance.reduce((acc, a) => acc + (parseFloat(a.net_hours) || parseFloat(a.total_hours) || 0), 0);
     const avgDailyNetHours = totalDaysLogged > 0 ? (totalNetHours / totalDaysLogged).toFixed(2) : '0';
 
     const totalTasks = empWorkDone.length;
@@ -119,19 +120,16 @@ export default async function reportsRoutes(fastify, options) {
     const aheadTasks = taskVariances.filter(t => t.isAheadOfTime);
     const onTargetTasks = taskVariances.filter(t => t.isOnTarget);
 
-    // 3. DAY-BY-DAY CHRONOLOGICAL TIMELINE (Punch + Tasks + Breaks)
+    // 3. DAY-BY-DAY CHRONOLOGICAL TIMELINE (Punch + Tasks)
     // Collect all unique dates in the month
     const allDates = [...new Set([
-      ...empAttendance.map(a => a.date),
-      ...empWorkDone.map(w => w.date),
-      ...empBreaks.map(b => b.date)
+      ...empAttendance.map(a => normalizeDateStr(a.date)),
+      ...empWorkDone.map(w => normalizeDateStr(w.date))
     ])].filter(Boolean).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
     const dailyActivityTimeline = allDates.map(d => {
-      const att = empAttendance.find(a => a.date === d);
-      const dayTasks = empWorkDone.filter(w => w.date === d);
-      const dayBreaks = empBreaks.filter(b => b.date === d);
-      const totalDayBreakMins = dayBreaks.reduce((sum, b) => sum + (parseFloat(b.duration_minutes) || 0), 0);
+      const att = empAttendance.find(a => normalizeDateStr(a.date) === d);
+      const dayTasks = empWorkDone.filter(w => normalizeDateStr(w.date) === d);
 
       return {
         date: d,
@@ -139,8 +137,8 @@ export default async function reportsRoutes(fastify, options) {
         loginTime: att ? att.login_time : null,
         logoutTime: att ? att.logout_time : null,
         grossHours: att ? att.total_hours : '0',
-        netHours: att ? att.net_hours : '0',
-        totalBreakMinutes: totalDayBreakMins,
+        netHours: att ? (att.net_hours || att.total_hours) : '0',
+        workMode: att?.in_geofence === 'WFH' ? 'WFH' : 'Office',
         tasksCount: dayTasks.length,
         tasks: dayTasks.map(t => ({
           title: t.task_title,
@@ -149,12 +147,6 @@ export default async function reportsRoutes(fastify, options) {
           act: t.actual_hours,
           status: t.status,
           remarks: t.remarks
-        })),
-        breaks: dayBreaks.map(b => ({
-          type: b.break_type,
-          start: b.start_time,
-          end: b.end_time,
-          duration: b.duration_minutes
         }))
       };
     });
@@ -186,7 +178,6 @@ export default async function reportsRoutes(fastify, options) {
         lateDays,
         halfDays,
         totalHoursGross: totalHoursGross.toFixed(2),
-        totalBreakHours: totalBreakHours.toFixed(2),
         totalNetHours: totalNetHours.toFixed(2),
         avgDailyNetHours,
         attendancePercentage: `${attendancePercentage}%`,
@@ -215,7 +206,6 @@ export default async function reportsRoutes(fastify, options) {
       details: {
         attendanceLogs: empAttendance,
         workDoneLogs: empWorkDone,
-        breakLogs: empBreaks,
         leaves: empLeaves,
         permissions: empPermissions
       },
@@ -234,16 +224,18 @@ export default async function reportsRoutes(fastify, options) {
     const breakRows = await getRows('Breaks');
     const employeeRows = await getRows('Employees');
 
-    let filteredAttendance = attendanceRows.filter(a => a.date?.startsWith(targetMonth));
-    let filteredWorkDone = workDoneRows.filter(w => w.date?.startsWith(targetMonth));
-    let filteredBreaks = breakRows.filter(b => b.date?.startsWith(targetMonth));
+    let filteredAttendance = attendanceRows.filter(a => normalizeDateStr(a.date).startsWith(targetMonth));
+    let filteredWorkDone = workDoneRows.filter(w => normalizeDateStr(w.date).startsWith(targetMonth));
+    let filteredBreaks = breakRows.filter(b => normalizeDateStr(b.date).startsWith(targetMonth));
 
     let targetEmployee = null;
     if (employee_id && employee_id !== 'ALL') {
-      targetEmployee = employeeRows.find(e => e.id === employee_id) || null;
-      filteredAttendance = filteredAttendance.filter(a => a.employee_id === employee_id);
-      filteredWorkDone = filteredWorkDone.filter(w => w.employee_id === employee_id);
-      filteredBreaks = filteredBreaks.filter(b => b.employee_id === employee_id);
+      targetEmployee = employeeRows.find(e => e.id === employee_id || e.email === employee_id) || null;
+      if (targetEmployee) {
+        filteredAttendance = filteredAttendance.filter(a => a.employee_id === targetEmployee.id || a.employee_id === targetEmployee.email || a.employee_name === targetEmployee.name);
+        filteredWorkDone = filteredWorkDone.filter(w => w.employee_id === targetEmployee.id || w.employee_id === targetEmployee.email || w.employee_name === targetEmployee.name);
+        filteredBreaks = filteredBreaks.filter(b => b.employee_id === targetEmployee.id || b.employee_id === targetEmployee.email);
+      }
     }
 
     const reportResult = await generateMonthlyAIReport({

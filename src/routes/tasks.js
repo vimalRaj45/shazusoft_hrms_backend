@@ -1,4 +1,4 @@
-import { getRows, addRow, updateRow, deleteRow } from '../sheets.js';
+import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format } from 'date-fns';
 
