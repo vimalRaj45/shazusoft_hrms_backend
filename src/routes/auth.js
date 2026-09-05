@@ -20,9 +20,10 @@ export default async function authRoutes(fastify, options) {
     const employees = await getRows('Employees');
     const existingUser = employees.find(e => e.email?.toLowerCase() === cleanEmail);
 
-    if (existingUser && (existingUser.status === 'inactive' || existingUser.status === 'resigned')) {
+    if (existingUser && existingUser.status !== 'active') {
       return reply.status(403).send({
-        error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`
+        error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`,
+        code: 'ACCOUNT_DEACTIVATED'
       });
     }
 
@@ -126,9 +127,10 @@ export default async function authRoutes(fastify, options) {
 
     const employees = await getRows('Employees');
     const existingUser = employees.find(e => e.email?.toLowerCase() === cleanEmail);
-    if (existingUser && (existingUser.status === 'inactive' || existingUser.status === 'resigned')) {
+    if (existingUser && existingUser.status !== 'active') {
       return reply.status(403).send({
-        error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`
+        error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`,
+        code: 'ACCOUNT_DEACTIVATED'
       });
     }
     const user = existingUser && existingUser.status === 'active' ? existingUser : null;
@@ -166,6 +168,12 @@ export default async function authRoutes(fastify, options) {
     const employees = await getRows('Employees');
     const freshUser = employees.find(e => e.id === request.user.id);
     if (freshUser) {
+      if (freshUser.status !== 'active') {
+        return reply.status(403).send({
+          error: `Your account is ${freshUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. You have been automatically logged out.`,
+          code: 'ACCOUNT_DEACTIVATED'
+        });
+      }
       const { password_hash, ...clean } = freshUser;
       return { user: { ...clean, work_mode: clean.work_mode || 'office' } };
     }

@@ -181,10 +181,27 @@ export default async function ticketsRoutes(fastify, options) {
     return { ticket, messages: ticketMessages };
   });
 
+  // GET /api/tickets/staff-list - Lightweight list of active staff for @mention autocomplete
+  fastify.get('/staff-list', { preHandler: [verifyAuth] }, async (request, reply) => {
+    const allEmps = await getRows('Employees');
+    const staff = allEmps
+      .filter(e => e.status === 'active')
+      .map(e => ({
+        id: e.id,
+        name: e.name,
+        email: e.email,
+        department: e.department || '',
+        designation: e.designation || '',
+        role: e.role || 'employee',
+        avatar_url: e.avatar_url || ''
+      }));
+    return { staff };
+  });
+
   // POST /api/tickets/:id/messages - Send message in conversation thread
   fastify.post('/:id/messages', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { id } = request.params;
-    const { message, attachment_url, is_internal_note } = request.body || {};
+    const { message, attachment_url, is_internal_note, mentions } = request.body || {};
 
     if (!message || !message.trim()) {
       return reply.status(400).send({ error: 'Message cannot be empty.' });
@@ -229,10 +246,9 @@ export default async function ticketsRoutes(fastify, options) {
 
     await updateRow('Support_Tickets', 'id', ticket.id, updatePayload);
 
-    // Push notification to the other party about the new message
+    // Standard push notification to primary ticket counterparty
     const isAdminSender = request.user.role === 'admin' || request.user.role === 'manager';
     const notifyId = isAdminSender ? ticket.creator_id : 'EMP-ADMIN-01';
-    const notifyName = isAdminSender ? ticket.creator_name : 'Management';
     sendPushNotification(notifyId, {
       title: 'New Message on Ticket',
       body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
@@ -240,6 +256,50 @@ export default async function ticketsRoutes(fastify, options) {
       tab: 'chat-hub',
       tag: `ticket-msg-${ticket.id}`
     }).catch(() => {});
+
+    // Detect and process @mentions in message
+    const allEmployees = await getRows('Employees');
+    const mentionedIds = new Set(Array.isArray(mentions) ? mentions : []);
+
+    // Auto-detect @Name in message text
+    allEmployees.forEach(emp => {
+      if (emp.status === 'active' && emp.id !== request.user.id) {
+        const fullNameRegex = new RegExp(`@${emp.name}\\b`, 'i');
+        const firstName = emp.name.split(' ')[0];
+        const firstNameRegex = firstName && firstName.length >= 3 ? new RegExp(`@${firstName}\\b`, 'i') : null;
+        if (fullNameRegex.test(message) || (firstNameRegex && firstNameRegex.test(message))) {
+          mentionedIds.add(emp.id);
+        }
+      }
+    });
+
+    // Send PWA Web Push notification to all mentioned staff members
+    for (const empId of mentionedIds) {
+      if (empId !== request.user.id && empId !== notifyId) {
+        const targetEmp = allEmployees.find(e => e.id === empId);
+        sendPushNotification(empId, {
+          title: `💬 ${request.user.name} mentioned you`,
+          body: `"${message.trim().slice(0, 90)}" — Ticket #${ticket.ticket_number}`,
+          url: '/?tab=chat-hub',
+          tab: 'chat-hub',
+          tag: `mention-${ticket.id}-${empId}`
+        }).catch(() => {});
+
+        // Audit mention event in Communications_Log
+        await addRow('Communications_Log', {
+          id: `COMM-${Date.now()}-${empId}`,
+          type: 'mention',
+          sender_id: request.user.id,
+          sender_name: request.user.name,
+          recipient_id: empId,
+          recipient_name: targetEmp?.name || empId,
+          subject: `Mentioned in ${ticket.ticket_number}`,
+          message: message.trim().slice(0, 160),
+          metadata_json: JSON.stringify({ ticket_id: ticket.id, ticket_number: ticket.ticket_number }),
+          created_at: now
+        }).catch(() => {});
+      }
+    }
 
     return {
       message: 'Message sent successfully.',
