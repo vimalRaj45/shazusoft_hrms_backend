@@ -91,8 +91,12 @@ export default async function attendanceRoutes(fastify, options) {
 
     // Check holidays & working calendar overrides
     const holidayRows = await getRows('Holidays');
-    const todayHoliday = holidayRows.find(h => h.date === todayStr);
-    const isWorkingSunday = isSunday && todayHoliday && (todayHoliday.type === 'Working Sunday' || todayHoliday.name?.toLowerCase().includes('working'));
+    const todayHoliday = holidayRows.find(h => (h.date || '').toString().trim().slice(0, 10) === todayStr);
+    const isWorkingSunday = isSunday && todayHoliday && (
+      todayHoliday.type === 'Working Sunday' ||
+      todayHoliday.type?.toLowerCase().includes('working') ||
+      todayHoliday.name?.toLowerCase().includes('working')
+    );
 
     if (isSunday && !isWorkingSunday) {
       return reply.status(400).send({
@@ -100,7 +104,7 @@ export default async function attendanceRoutes(fastify, options) {
       });
     }
 
-    if (todayHoliday && !isWorkingSunday && todayHoliday.type !== 'Working Sunday') {
+    if (todayHoliday && !isWorkingSunday && todayHoliday.type !== 'Working Sunday' && !todayHoliday.type?.toLowerCase().includes('working') && !todayHoliday.name?.toLowerCase().includes('working')) {
       return reply.status(400).send({
         error: `Today is a company holiday: "${todayHoliday.name}" (${todayHoliday.type || 'Holiday'}). Check-in is not required.`
       });
@@ -336,7 +340,11 @@ export default async function attendanceRoutes(fastify, options) {
       };
 
       const holidayInfo = holidayMap[dateStr];
-      const isWorkingSunday = isSunday && holidayInfo && (holidayInfo.type === 'Working Sunday' || holidayInfo.name?.toLowerCase().includes('working'));
+      const isWorkingSunday = isSunday && holidayInfo && (
+        holidayInfo.type === 'Working Sunday' ||
+        holidayInfo.type?.toLowerCase().includes('working') ||
+        holidayInfo.name?.toLowerCase().includes('working')
+      );
 
       if (isFuture) {
         days.push({
@@ -603,7 +611,11 @@ export default async function attendanceRoutes(fastify, options) {
       };
 
       const holidayInfo = holidayMap[dateStr];
-      const isWorkingSunday = isSunday && holidayInfo && (holidayInfo.type === 'Working Sunday' || holidayInfo.name?.toLowerCase().includes('working'));
+      const isWorkingSunday = isSunday && holidayInfo && (
+        holidayInfo.type === 'Working Sunday' ||
+        holidayInfo.type?.toLowerCase().includes('working') ||
+        holidayInfo.name?.toLowerCase().includes('working')
+      );
 
       if (isFuture) {
         days.push({

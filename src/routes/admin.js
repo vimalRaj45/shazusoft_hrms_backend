@@ -3,6 +3,7 @@ import { verifyAdmin, hashPassword } from '../auth.js';
 import { runtimeSettings } from '../config.js';
 import { format } from 'date-fns';
 import { formatTime12h } from './attendance.js';
+import { sendInvitationEmail } from '../mailer.js';
 
 export default async function adminRoutes(fastify, options) {
   // Live Office Attendance & Presence Board
@@ -12,7 +13,7 @@ export default async function adminRoutes(fastify, options) {
     const attendance = await getRows('Attendance');
 
     const todayAttendance = attendance.filter(a => a.date === todayStr);
-    const activeEmployees = employees.filter(e => e.status !== 'inactive');
+    const activeEmployees = employees.filter(e => e.status !== 'inactive' && e.status !== 'resigned');
 
     const liveBoard = activeEmployees.map(emp => {
       const att = todayAttendance.find(a => a.employee_id === emp.id);
@@ -133,9 +134,24 @@ export default async function adminRoutes(fastify, options) {
       const saved = await addRow('Employees', newEmp);
       const { password_hash, ...clean } = saved;
 
+      // Dispatch official onboarding invitation email asynchronously
+      sendInvitationEmail({
+        toEmail: clean.email,
+        employeeName: clean.name,
+        employeeId: clean.id,
+        role: clean.role,
+        department: clean.department,
+        designation: clean.designation,
+        workMode: clean.work_mode,
+        portalUrl: request.headers.origin || 'http://localhost:5173'
+      }).catch(err => {
+        fastify.log.warn(`[Hostinger Mail] Onboarding email failed for ${clean.email}: ${err?.message}`);
+      });
+
       return {
-        message: 'Employee created successfully!',
-        employee: clean
+        message: 'Employee created successfully & onboarding invitation email dispatched!',
+        employee: clean,
+        invitation_sent: true
       };
     } catch (err) {
       fastify.log.error(err);
@@ -215,6 +231,164 @@ export default async function adminRoutes(fastify, options) {
         ...clean,
         documents_frozen: Boolean(clean.documents_frozen === true || clean.documents_frozen === 'true' || clean.documents_frozen === 't')
       }
+    };
+  });
+
+  // POST /api/admin/employees/:id/deactivate — Deactivate or mark employee as resigned (soft delete with audit & cascade archival)
+  fastify.post('/employees/:id/deactivate', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const { status = 'resigned', reason = '', effective_date = '' } = request.body || {};
+
+    const targetStatus = status === 'inactive' ? 'inactive' : 'resigned';
+    const employees = await getRows('Employees');
+    const user = employees.find(e => e.id === id);
+    if (!user) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    let personalInfo = {};
+    try {
+      personalInfo = user.personal_info ? (typeof user.personal_info === 'string' ? JSON.parse(user.personal_info) : user.personal_info) : {};
+    } catch (e) {}
+
+    const nowIso = new Date().toISOString();
+    const effectiveDate = effective_date || nowIso.split('T')[0];
+
+    personalInfo.exit_details = {
+      status: targetStatus,
+      effective_date: effectiveDate,
+      reason: reason?.trim() || (targetStatus === 'resigned' ? 'Staff Resignation' : 'Account Deactivated'),
+      processed_by: request.user.name,
+      processed_by_id: request.user.id,
+      processed_at: nowIso
+    };
+
+    const updated = await updateRow('Employees', 'id', id, {
+      status: targetStatus,
+      personal_info: JSON.stringify(personalInfo)
+    });
+
+    // Cascade archival to pending requests in associated tables
+    try {
+      const leaves = await getRows('Leaves');
+      const pendingLeaves = leaves.filter(l => l.employee_id === id && l.status === 'Pending');
+      for (const pl of pendingLeaves) {
+        await updateRow('Leaves', 'id', pl.id, {
+          status: 'Rejected',
+          review_remarks: `Archived: Staff member ${user.name} marked as ${targetStatus}.`
+        });
+      }
+
+      const perms = await getRows('Permissions');
+      const pendingPerms = perms.filter(p => p.employee_id === id && p.status === 'Pending');
+      for (const pp of pendingPerms) {
+        await updateRow('Permissions', 'id', pp.id, {
+          status: 'Rejected',
+          review_remarks: `Archived: Staff member ${user.name} marked as ${targetStatus}.`
+        });
+      }
+
+      const regs = await getRows('Regularizations');
+      const pendingRegs = regs.filter(r => r.employee_id === id && r.status === 'Pending');
+      for (const pr of pendingRegs) {
+        await updateRow('Regularizations', 'id', pr.id, {
+          status: 'Rejected',
+          review_remarks: `Archived: Staff member ${user.name} marked as ${targetStatus}.`,
+          reviewed_by_id: request.user.id,
+          reviewed_by_name: request.user.name,
+          updated_at: nowIso
+        });
+      }
+    } catch (err) {
+      fastify.log.warn(`[Cascade Archival Warning] ${err.message}`);
+    }
+
+    // Add Audit Log Entry
+    try {
+      await addRow('Communications_Log', {
+        id: `AUDIT-${Date.now()}`,
+        type: 'STAFF_STATUS_CHANGE',
+        sender_id: request.user.id,
+        sender_name: request.user.name,
+        recipient_id: user.id,
+        recipient_name: user.name,
+        subject: `Staff Status Changed: ${user.name} (${user.id}) marked as ${targetStatus.toUpperCase()}`,
+        message: `Employee marked as ${targetStatus} effective ${effectiveDate}. Reason: ${reason || 'Administrative update'}. Processed by ${request.user.name}.`,
+        metadata_json: JSON.stringify({
+          employee_id: user.id,
+          employee_name: user.name,
+          previous_status: user.status,
+          new_status: targetStatus,
+          effective_date: effectiveDate,
+          reason
+        }),
+        created_at: nowIso
+      });
+    } catch (auditErr) {
+      fastify.log.warn(`[Audit Log Warning] ${auditErr.message}`);
+    }
+
+    const { password_hash, ...clean } = updated;
+    return {
+      success: true,
+      message: `Staff member "${user.name}" has been marked as ${targetStatus === 'resigned' ? 'Resigned' : 'Inactive'}. Associated pending requests have been archived.`,
+      employee: clean
+    };
+  });
+
+  // POST /api/admin/employees/:id/reactivate — Restore employee to active status
+  fastify.post('/employees/:id/reactivate', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const employees = await getRows('Employees');
+    const user = employees.find(e => e.id === id);
+    if (!user) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    let personalInfo = {};
+    try {
+      personalInfo = user.personal_info ? (typeof user.personal_info === 'string' ? JSON.parse(user.personal_info) : user.personal_info) : {};
+    } catch (e) {}
+
+    const nowIso = new Date().toISOString();
+    if (personalInfo.exit_details) {
+      personalInfo.exit_details.reactivated_at = nowIso;
+      personalInfo.exit_details.reactivated_by = request.user.name;
+    }
+
+    const updated = await updateRow('Employees', 'id', id, {
+      status: 'active',
+      personal_info: JSON.stringify(personalInfo)
+    });
+
+    // Add Audit Log
+    try {
+      await addRow('Communications_Log', {
+        id: `AUDIT-${Date.now()}`,
+        type: 'STAFF_STATUS_CHANGE',
+        sender_id: request.user.id,
+        sender_name: request.user.name,
+        recipient_id: user.id,
+        recipient_name: user.name,
+        subject: `Staff Reactivated: ${user.name} (${user.id}) restored to ACTIVE status`,
+        message: `Employee was restored to active working status by ${request.user.name}.`,
+        metadata_json: JSON.stringify({
+          employee_id: user.id,
+          employee_name: user.name,
+          previous_status: user.status,
+          new_status: 'active'
+        }),
+        created_at: nowIso
+      });
+    } catch (auditErr) {
+      fastify.log.warn(`[Audit Log Warning] ${auditErr.message}`);
+    }
+
+    const { password_hash, ...clean } = updated;
+    return {
+      success: true,
+      message: `Staff member "${user.name}" has been restored to ACTIVE status.`,
+      employee: clean
     };
   });
 

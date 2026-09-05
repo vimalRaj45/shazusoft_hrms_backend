@@ -2,6 +2,10 @@ import { initDB, addRow, getRows, updateRow } from './db.js';
 import bcrypt from 'bcryptjs';
 
 async function seedFullBusinessData() {
+  if (process.env.NODE_ENV === 'production' || !process.argv.includes('--allow-dev-seed')) {
+    console.error('⛔ REFUSED: Mock data seeding is strictly disabled in production. Run with --allow-dev-seed flag only in local testing.');
+    process.exit(1);
+  }
   console.log('🚀 Starting Neon PostgreSQL Comprehensive 5-Staff Business Mock Data Seeding (September 2026)...');
   const connected = await initDB();
   if (!connected) {

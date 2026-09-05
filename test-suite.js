@@ -240,6 +240,7 @@ async function runAllTests() {
     expect(body.employee).toBeTruthy();
     expect(body.employee.id).toBeTruthy();
     expect(body.employee.email).toBe(testNewEmpEmail.toLowerCase());
+    expect(body.invitation_sent).toBe(true);
     createdEmpId = body.employee.id;
   });
 

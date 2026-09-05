@@ -18,7 +18,15 @@ export default async function authRoutes(fastify, options) {
 
     const cleanEmail = email.trim().toLowerCase();
     const employees = await getRows('Employees');
-    let user = employees.find(e => e.email?.toLowerCase() === cleanEmail && e.status !== 'inactive');
+    const existingUser = employees.find(e => e.email?.toLowerCase() === cleanEmail);
+
+    if (existingUser && (existingUser.status === 'inactive' || existingUser.status === 'resigned')) {
+      return reply.status(403).send({
+        error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`
+      });
+    }
+
+    let user = existingUser && existingUser.status === 'active' ? existingUser : null;
 
     // For production: Ensure only registered employees can log in.
     // If user is not yet in Employees sheet, allow auto-provisioning ONLY for the root admin.
@@ -117,10 +125,16 @@ export default async function authRoutes(fastify, options) {
     otpCache.delete(cleanEmail);
 
     const employees = await getRows('Employees');
-    const user = employees.find(e => e.email?.toLowerCase() === cleanEmail && e.status !== 'inactive');
+    const existingUser = employees.find(e => e.email?.toLowerCase() === cleanEmail);
+    if (existingUser && (existingUser.status === 'inactive' || existingUser.status === 'resigned')) {
+      return reply.status(403).send({
+        error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`
+      });
+    }
+    const user = existingUser && existingUser.status === 'active' ? existingUser : null;
 
     if (!user) {
-      return reply.status(404).send({ error: 'User account not found.' });
+      return reply.status(404).send({ error: 'Active user account not found.' });
     }
 
     const token = fastify.jwt.sign({

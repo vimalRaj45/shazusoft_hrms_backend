@@ -20,7 +20,7 @@ import notificationsRoutes from './routes/notifications.js';
 
 async function buildServer() {
   const fastify = Fastify({
-    logger: true,
+    logger: config.isProduction ? { level: 'info' } : true,
     bodyLimit: 52428800 // 50MB for document & image uploads
   });
 
@@ -65,7 +65,8 @@ async function buildServer() {
 async function start() {
   try {
     console.log('----------------------------------------------------');
-    console.log('🚀 Initializing Shazusoft HRMS Backend (PostgreSQL)...');
+    console.log(`🚀 Initializing Shazusoft HRMS Backend [${config.nodeEnv.toUpperCase()}]...`);
+    console.log('🔒 Production Integrity: Seed & Mock Data Generation DISABLED');
     console.log('----------------------------------------------------');
 
     await initDB();

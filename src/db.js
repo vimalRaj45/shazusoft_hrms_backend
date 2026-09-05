@@ -413,30 +413,29 @@ async function initTables() {
 }
 
 /**
- * Seed initial root admin
+ * Ensure root administrator account exists if database is newly initialized
+ * Strictly NO mock data or test users are seeded on server startup.
  */
-async function seedDefaultUsers() {
-  const initialUsers = [
-    {
-      id: 'EMP-ADMIN-01',
-      name: 'Vimal Raj',
-      email: 'vimalraj5207@gmail.com',
-      password_hash: 'OTP_AUTH_ENABLED',
-      role: 'admin',
-      department: 'Executive Management',
-      designation: 'Managing Director & Administrator',
-      work_mode: 'office',
-      status: 'active',
-      created_at: new Date().toISOString()
-    }
-  ];
+async function ensureRootAdminExists() {
+  const rootAdmin = {
+    id: 'EMP-ADMIN-01',
+    name: 'Vimal Raj',
+    email: 'vimalraj5207@gmail.com',
+    password_hash: 'OTP_AUTH_ENABLED',
+    role: 'admin',
+    department: 'Executive Management',
+    designation: 'Managing Director & Administrator',
+    work_mode: 'office',
+    status: 'active',
+    created_at: new Date().toISOString()
+  };
 
   const existing = await getRows('Employees');
   if (existing.length === 0) {
-    for (const user of initialUsers) {
-      await addRow('Employees', user);
-    }
-    console.log('[PostgreSQL] Seeded initial root admin (vimalraj5207@gmail.com).');
+    await addRow('Employees', rootAdmin);
+    console.log('[PostgreSQL] Initialized root administrator account (vimalraj5207@gmail.com).');
+  } else {
+    console.log(`[PostgreSQL] Ready in production mode (${existing.length} registered employee accounts). Automated mock seeding: DISABLED.`);
   }
 }
 
@@ -446,7 +445,7 @@ async function seedDefaultUsers() {
 export async function initDB() {
   if (!config.databaseUrl) {
     console.warn('[PostgreSQL] DATABASE_URL not set in .env. Running in in-memory mode.');
-    await seedDefaultUsers();
+    await ensureRootAdminExists();
     return false;
   }
 
@@ -463,12 +462,12 @@ export async function initDB() {
     console.log('[PostgreSQL] Connected successfully to Neon PostgreSQL database.');
     await initTables();
     isConnected = true;
-    await seedDefaultUsers();
+    await ensureRootAdminExists();
     return true;
   } catch (err) {
     console.error('[PostgreSQL] Connection error:', err.message);
     isConnected = false;
-    await seedDefaultUsers();
+    await ensureRootAdminExists();
     return false;
   }
 }

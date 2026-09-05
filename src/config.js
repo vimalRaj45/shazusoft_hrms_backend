@@ -23,6 +23,8 @@ export const config = {
   hostingerSenderEmail: process.env.HOSTINGER_SENDER_EMAIL || '',
   hostingerSenderName: process.env.HOSTINGER_SENDER_NAME || '',
   databaseUrl: process.env.DATABASE_URL || '',
+  nodeEnv: process.env.NODE_ENV || 'production',
+  isProduction: (process.env.NODE_ENV === 'production' || !process.env.NODE_ENV),
   r2AccountId: process.env.R2_ACCOUNT_ID || '',
   r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',
   r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',

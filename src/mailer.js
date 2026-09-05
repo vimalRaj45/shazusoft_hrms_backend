@@ -299,3 +299,167 @@ export async function sendProfessionalRejectionEmail({
   }
 }
 
+/**
+ * Send an official Welcome & Onboarding Invitation Email to a new employee
+ * @param {Object} params
+ * @param {string} params.toEmail
+ * @param {string} params.employeeName
+ * @param {string} params.employeeId
+ * @param {string} [params.role]
+ * @param {string} [params.department]
+ * @param {string} [params.designation]
+ * @param {string} [params.workMode]
+ * @param {string} [params.portalUrl]
+ */
+export async function sendInvitationEmail({
+  toEmail,
+  employeeName = 'Valued Team Member',
+  employeeId,
+  role = 'employee',
+  department = 'General',
+  designation = 'Staff',
+  workMode = 'office',
+  portalUrl = 'http://localhost:5173'
+}) {
+  try {
+    const mailboxId = await getMailboxResourceId();
+    const configuration = new Configuration({
+      accessToken: config.hostingerApiKey
+    });
+    const sendApi = new SendApi(configuration);
+
+    const subject = `Welcome to Shazu Soft Technologies — Your HRMS Workspace Access (${employeeId})`;
+    const workModeLabel = workMode === 'wfh' ? 'Work From Home (Remote)' : 'In-Office (GPS Perimeter)';
+
+    const plainText = `Welcome to Shazu Soft Technologies, ${employeeName}!\n\nYour official HRMS portal account has been provisioned by management.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Email: ${toEmail}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Staff Member'}\n- Work Mode: ${workModeLabel}\n\nHow to Access the Portal:\n1. Open ${portalUrl}\n2. Enter your registered email (${toEmail})\n3. Receive and submit your 6-digit One-Time Passcode (OTP). No password required!\n4. Complete and verify your compliance records.\n\nWelcome aboard!\nShazu Soft Technologies Management`;
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 35px 15px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+          
+          <!-- Corporate Header Banner -->
+          <tr>
+            <td style="background-color: #133829; padding: 26px 30px; text-align: left;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td>
+                    <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 800; letter-spacing: 0.03em;">
+                      SHAZU SOFT TECHNOLOGIES
+                    </h1>
+                    <p style="margin: 4px 0 0 0; color: #a7f3d0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
+                      Human Resources Management System • Portal Onboarding
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Main Body Content -->
+          <tr>
+            <td style="padding: 32px 30px;">
+              <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px; font-weight: 800;">
+                Welcome to the Team, ${employeeName}!
+              </h2>
+              <p style="margin: 0 0 20px 0; color: #475569; font-size: 14px; line-height: 1.6;">
+                Your official employee account has been created by HR & Operations Management. You can now access your daily attendance punch, timesheets, tasks, leave quotas, and employee documents through our secure portal.
+              </p>
+
+              <!-- Credentials Card -->
+              <table role="presentation" width="100%" style="background-color: #f1f5f9; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 24px; border-collapse: collapse;">
+                <tr>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b; width: 35%;">Employee ID</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 800; color: #133829;">${employeeId}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b;">Registered Email</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; color: #0f172a;">${toEmail}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b;">Department</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #334155;">${department}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b;">Designation</td>
+                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #334155;">${designation}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 12px 16px; font-size: 12px; font-weight: 700; color: #64748b;">Work Mode</td>
+                  <td style="padding: 12px 16px; font-size: 13px; font-weight: 700; color: #0284c7;">${workModeLabel}</td>
+                </tr>
+              </table>
+
+              <!-- Login Guide -->
+              <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;">
+                How to Authenticate (Passwordless & Secured):
+              </h3>
+              <ol style="margin: 0 0 24px 0; padding-left: 20px; color: #334155; font-size: 13px; line-height: 1.7;">
+                <li>Visit the HRMS portal using the button below.</li>
+                <li>Enter your registered email address (<strong style="color: #0f172a;">${toEmail}</strong>).</li>
+                <li>Click <em>"Send Verification Code"</em> to receive a 6-digit one-time code via email.</li>
+                <li>Enter the code to immediately access your dashboard.</li>
+              </ol>
+
+              <!-- CTA Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center">
+                    <a href="${portalUrl}" target="_blank" style="display: inline-block; background-color: #133829; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 28px; border-radius: 6px; box-shadow: 0 2px 8px rgba(19,56,41,0.25);">
+                      Launch HRMS Portal →
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; color: #64748b; font-size: 12px; line-height: 1.5; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                Need help or have questions? Contact your HR Manager or reach out via our internal support desk.
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 30px; text-align: center;">
+              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
+                Sent automatically by Shazu Soft HRMS Onboarding Service (${config.hostingerSenderEmail})<br>
+                © ${new Date().getFullYear()} Shazu Soft Technologies. All rights reserved.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+    `;
+
+    const payload = {
+      to: [toEmail],
+      displayName: config.hostingerSenderName,
+      subject: subject,
+      text: plainText,
+      html: htmlContent
+    };
+
+    const response = await sendApi.sendEmail(mailboxId, payload);
+    console.log(`[Hostinger Mail] Onboarding invitation email successfully dispatched to ${toEmail}. Status: ${response.status}`);
+    return response;
+  } catch (err) {
+    console.error(`[Hostinger Mail] Failed to dispatch onboarding invitation email to ${toEmail}:`, err.response?.data || err.message);
+    return null;
+  }
+}
+
+
