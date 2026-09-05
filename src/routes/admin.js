@@ -84,37 +84,62 @@ export default async function adminRoutes(fastify, options) {
   fastify.post('/employees', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { name, email, role = 'employee', department = 'General', designation = 'Staff', work_mode = 'office' } = request.body || {};
 
-    if (!name || !email) {
+    if (!name?.trim() || !email?.trim()) {
       return reply.status(400).send({ error: 'Name and email are required.' });
     }
 
+    const trimmedEmail = email.trim().toLowerCase();
     const rows = await getRows('Employees');
-    const exists = rows.find(e => e.email?.toLowerCase() === email.toLowerCase());
+    const exists = rows.find(e => e.email?.toLowerCase() === trimmedEmail);
 
     if (exists) {
       return reply.status(400).send({ error: 'An employee with this email already exists.' });
     }
 
+    // Robust Collision-Free ID Generation
+    let maxNum = 0;
+    rows.forEach(r => {
+      const match = r.id?.match(/^EMP-(?:STAFF-)?(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+
+    let nextNum = Math.max(maxNum + 1, rows.length + 1);
+    let candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
+    while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
+      nextNum++;
+      candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
+    }
+
     const newEmp = {
-      id: `EMP-${String(rows.length + 1).padStart(3, '0')}`,
-      name,
-      email,
+      id: candidateId,
+      name: name.trim(),
+      email: trimmedEmail,
       password_hash: 'OTP_AUTH_ENABLED',
-      role,
-      department,
-      designation,
+      role: role === 'admin' ? 'admin' : 'employee',
+      department: department?.trim() || 'General',
+      designation: designation?.trim() || 'Staff',
       work_mode: work_mode === 'wfh' ? 'wfh' : 'office',
       status: 'active',
+      profile_completeness: 0,
+      documents_frozen: false,
       created_at: new Date().toISOString()
     };
 
-    const saved = await addRow('Employees', newEmp);
-    const { password_hash, ...clean } = saved;
+    try {
+      const saved = await addRow('Employees', newEmp);
+      const { password_hash, ...clean } = saved;
 
-    return {
-      message: 'Employee created successfully!',
-      employee: clean
-    };
+      return {
+        message: 'Employee created successfully!',
+        employee: clean
+      };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ error: `Failed to create employee in database: ${err.message}` });
+    }
   });
 
   // Update employee

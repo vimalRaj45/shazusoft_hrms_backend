@@ -504,7 +504,11 @@ export async function addRow(tableName, rowData) {
   const cleanData = { ...rowData };
   const headers = TABLE_HEADERS[tableName] || Object.keys(cleanData);
   headers.forEach(h => {
-    if (cleanData[h] === undefined || cleanData[h] === null) {
+    if (tableName === 'Employees' && h === 'profile_completeness') {
+      cleanData[h] = parseInt(cleanData[h], 10) || 0;
+    } else if (tableName === 'Employees' && h === 'documents_frozen') {
+      cleanData[h] = Boolean(cleanData[h] === true || cleanData[h] === 'true' || cleanData[h] === 't');
+    } else if (cleanData[h] === undefined || cleanData[h] === null) {
       cleanData[h] = '';
     } else if (typeof cleanData[h] === 'object') {
       cleanData[h] = JSON.stringify(cleanData[h]);
@@ -538,6 +542,7 @@ export async function addRow(tableName, rowData) {
       return saved;
     } catch (err) {
       console.error(`[PostgreSQL] Error adding to ${tableName}:`, err.message);
+      throw err;
     }
   }
 
@@ -561,8 +566,11 @@ export async function updateRow(tableName, matchField, matchValue, updateData) {
         const setClauses = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
         const values = keys.map(k => {
           const val = updateData[k];
+          if (tableName === 'Employees' && k === 'profile_completeness') return parseInt(val, 10) || 0;
+          if (tableName === 'Employees' && k === 'documents_frozen') return Boolean(val === true || val === 'true' || val === 't');
           if (typeof val === 'object' && val !== null) return JSON.stringify(val);
           if (typeof val === 'number') return val;
+          if (typeof val === 'boolean') return val;
           return String(val ?? '');
         });
         values.push(String(matchValue));
@@ -587,6 +595,7 @@ export async function updateRow(tableName, matchField, matchValue, updateData) {
       }
     } catch (err) {
       console.error(`[PostgreSQL] Error updating ${tableName}:`, err.message);
+      throw err;
     }
   }
 

@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from './src/config.js';
+import { deleteRow } from './src/db.js';
 
 const BASE_URL = `http://localhost:${config.port || 5000}`;
 
@@ -184,6 +185,107 @@ async function runAllTests() {
     const body = await res.json();
     expect(body.employees.length).toBeGreaterThan(0);
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // 3b. EMPLOYEE CREATION, VALIDATION & POSTGRESQL PERSISTENCE
+  // ─────────────────────────────────────────────────────────────
+  const testNewEmpEmail = `autotest.employee.${Date.now()}@shazusoft.org`;
+  let createdEmpId = null;
+
+  await assertTest('POST /api/admin/employees (Edge Case: Missing Name or Email) -> 400', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ name: 'Incomplete Staff' })
+    });
+    expect(res.status).toBe(400);
+  });
+
+  await assertTest('POST /api/admin/employees (RBAC Edge Case: Staff Token) -> 403 Forbidden', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${staffToken}`
+      },
+      body: JSON.stringify({
+        name: 'Unauthorized User',
+        email: testNewEmpEmail
+      })
+    });
+    expect(res.status).toBe(403);
+  });
+
+  await assertTest('POST /api/admin/employees (Create New Staff Member in PostgreSQL) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        name: 'Auto-Test Engineer',
+        email: testNewEmpEmail,
+        role: 'employee',
+        department: 'Software Engineering',
+        designation: 'QA Automation Engineer',
+        work_mode: 'office'
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.employee).toBeTruthy();
+    expect(body.employee.id).toBeTruthy();
+    expect(body.employee.email).toBe(testNewEmpEmail.toLowerCase());
+    createdEmpId = body.employee.id;
+  });
+
+  await assertTest('GET /api/admin/employees (Verify New Staff Member is Persisted in DB) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const persisted = body.employees.find(e => e.id === createdEmpId || e.email === testNewEmpEmail.toLowerCase());
+    expect(persisted).toBeTruthy();
+    expect(persisted.name).toBe('Auto-Test Engineer');
+  });
+
+  await assertTest('POST /api/admin/employees (Edge Case: Duplicate Email Rejection) -> 400', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/employees`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        name: 'Duplicate Staff',
+        email: testNewEmpEmail
+      })
+    });
+    expect(res.status).toBe(400);
+  });
+
+  await assertTest('POST /api/auth/send-otp (Verify New Staff Member Can Authenticate) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/auth/send-otp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: testNewEmpEmail })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.message).toBeTruthy();
+  });
+
+  // Cleanup created test employee
+  if (createdEmpId) {
+    try {
+      await deleteRow('Employees', 'id', createdEmpId);
+    } catch (e) {}
+  }
 
   await assertTest('PATCH /api/admin/employees/:id/work-mode (Toggle to WFH) -> 200', async () => {
     const res = await fetch(`${BASE_URL}/api/admin/employees/EMP-ADMIN-01/work-mode`, {
