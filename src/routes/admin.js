@@ -1,7 +1,8 @@
-import { getRows, addRow, updateRow, deleteRow, getStatus } from '../db.js';
+import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updateLeavePolicy } from '../db.js';
 import { verifyAdmin, hashPassword } from '../auth.js';
 import { runtimeSettings } from '../config.js';
 import { format } from 'date-fns';
+import { formatTime12h } from './attendance.js';
 
 export default async function adminRoutes(fastify, options) {
   // Live Office Attendance & Presence Board
@@ -33,8 +34,8 @@ export default async function adminRoutes(fastify, options) {
         department: emp.department,
         designation: emp.designation,
         statusToday: currentStatus,
-        loginTime: att ? att.login_time : null,
-        logoutTime: att ? att.logout_time : null,
+        loginTime: att ? formatTime12h(att.login_time) : null,
+        logoutTime: att ? formatTime12h(att.logout_time) : null,
         netHours: att ? (att.net_hours || att.total_hours || '0') : '0'
       };
     });
@@ -227,6 +228,36 @@ export default async function adminRoutes(fastify, options) {
         env_only: true  // UI must treat these as read-only
       },
       system: getStatus()
+    };
+  });
+
+  // GET /api/admin/leave-policy — Get active monthly leave policy
+  fastify.get('/leave-policy', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const policy = await getLeavePolicy();
+    return { policy };
+  });
+
+  // PUT /api/admin/leave-policy — Update monthly leave policy
+  fastify.put('/leave-policy', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { casual_leave, sick_leave, paid_leave, monthly_permission_limit, max_permission_hours } = request.body || {};
+
+    if (casual_leave !== undefined && (isNaN(casual_leave) || Number(casual_leave) < 0)) {
+      return reply.status(400).send({ error: 'Casual Leave quota must be a valid non-negative number.' });
+    }
+    if (sick_leave !== undefined && (isNaN(sick_leave) || Number(sick_leave) < 0)) {
+      return reply.status(400).send({ error: 'Sick Leave quota must be a valid non-negative number.' });
+    }
+    if (paid_leave !== undefined && (isNaN(paid_leave) || Number(paid_leave) < 0)) {
+      return reply.status(400).send({ error: 'Paid Leave quota must be a valid non-negative number.' });
+    }
+    if (monthly_permission_limit !== undefined && (isNaN(monthly_permission_limit) || Number(monthly_permission_limit) < 0)) {
+      return reply.status(400).send({ error: 'Monthly Permission limit must be a valid non-negative number.' });
+    }
+
+    const updated = await updateLeavePolicy(request.body, request.user.name);
+    return {
+      message: 'Monthly leave policy updated successfully.',
+      policy: updated
     };
   });
 

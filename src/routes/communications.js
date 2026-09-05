@@ -2,6 +2,7 @@ import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInMinutes } from 'date-fns';
+import { formatTime12h, parseTimeStrToDate } from './attendance.js';
 
 export default async function communicationsRoutes(fastify, options) {
   // GET /api/communications/requests - List regularization requests
@@ -108,17 +109,20 @@ export default async function communicationsRoutes(fastify, options) {
       let netHours = '0.00';
 
       if (target.requested_logout_time) {
-        const loginDateTime = new Date(`${target.date}T${target.requested_login_time.length === 5 ? target.requested_login_time + ':00' : target.requested_login_time}`);
-        const logoutDateTime = new Date(`${target.date}T${target.requested_logout_time.length === 5 ? target.requested_logout_time + ':00' : target.requested_logout_time}`);
+        const loginDateTime = parseTimeStrToDate(target.date, target.requested_login_time);
+        const logoutDateTime = parseTimeStrToDate(target.date, target.requested_logout_time);
         const diffMin = Math.max(0, differenceInMinutes(logoutDateTime, loginDateTime));
         totalHours = (diffMin / 60).toFixed(2);
         netHours = totalHours;
       }
 
+      const formattedLogin = formatTime12h(target.requested_login_time);
+      const formattedLogout = target.requested_logout_time ? formatTime12h(target.requested_logout_time) : '';
+
       if (existing) {
         await updateRow('Attendance', 'id', existing.id, {
-          login_time: target.requested_login_time,
-          logout_time: target.requested_logout_time || existing.logout_time || '',
+          login_time: formattedLogin,
+          logout_time: formattedLogout || existing.logout_time || '',
           total_hours: totalHours !== '0.00' ? totalHours : existing.total_hours,
           net_hours: netHours !== '0.00' ? netHours : existing.net_hours,
           status: 'Regularized',
@@ -130,8 +134,8 @@ export default async function communicationsRoutes(fastify, options) {
           date: target.date,
           employee_id: target.employee_id,
           employee_name: target.employee_name,
-          login_time: target.requested_login_time,
-          logout_time: target.requested_logout_time || '',
+          login_time: formattedLogin,
+          logout_time: formattedLogout,
           total_hours: totalHours,
           break_hours: '0.00',
           net_hours: netHours,

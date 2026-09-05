@@ -126,11 +126,12 @@ export default async function ticketsRoutes(fastify, options) {
       created_at: now
     });
 
-    // 🔔 Notify admin of new support ticket
+    // Push notification to admin of new support ticket
     sendPushNotification('EMP-ADMIN-01', {
-      title: '🎫 New Support Ticket',
+      title: 'New Support Ticket',
       body: `${request.user.name} raised ${ticketNumber}: "${subject}" [${priority || 'Medium'} priority].`,
-      url: '/dashboard',
+      url: '/?tab=chat-hub',
+      tab: 'chat-hub',
       tag: `ticket-new-${ticketId}`
     }).catch(() => {});
 
@@ -228,14 +229,15 @@ export default async function ticketsRoutes(fastify, options) {
 
     await updateRow('Support_Tickets', 'id', ticket.id, updatePayload);
 
-    // 🔔 Notify the other party about the new message
+    // Push notification to the other party about the new message
     const isAdminSender = request.user.role === 'admin' || request.user.role === 'manager';
     const notifyId = isAdminSender ? ticket.creator_id : 'EMP-ADMIN-01';
     const notifyName = isAdminSender ? ticket.creator_name : 'Management';
     sendPushNotification(notifyId, {
-      title: '💬 New Message on Ticket',
+      title: 'New Message on Ticket',
       body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
-      url: '/dashboard',
+      url: '/?tab=chat-hub',
+      tab: 'chat-hub',
       tag: `ticket-msg-${ticket.id}`
     }).catch(() => {});
 
@@ -331,11 +333,12 @@ export default async function ticketsRoutes(fastify, options) {
 
     const saved = await addRow('Broadcasts', newBroadcast);
 
-    // 🔔 Push broadcast to ALL subscribed employees
+    // Push broadcast to ALL subscribed employees
     broadcastPushNotification({
-      title: `📢 ${title.trim()}`,
+      title: title.trim(),
       body: content.trim().slice(0, 120),
-      url: '/dashboard',
+      url: '/?tab=announcements',
+      tab: 'announcements',
       tag: `broadcast-${saved.id}`
     }).catch(() => {});
 

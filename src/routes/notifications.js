@@ -53,9 +53,10 @@ export default async function notificationsRoutes(fastify, options) {
   // POST /api/notifications/send-test (Immediate self-test push notification)
   fastify.post('/send-test', { preHandler: [verifyAuth] }, async (request, reply) => {
     const payload = {
-      title: '🔔 ShazuSoft HRMS Test Notification',
+      title: 'ShazuSoft HRMS Test Notification',
       body: `Hello ${request.user.name}! Push notifications are successfully active and working.`,
-      url: '/',
+      url: '/?tab=dashboard',
+      tab: 'dashboard',
       tag: 'shazu-test-push'
     };
 
@@ -69,16 +70,18 @@ export default async function notificationsRoutes(fastify, options) {
 
   // POST /api/notifications/broadcast (Admin only: company-wide announcement)
   fastify.post('/broadcast', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { title, message, url } = request.body || {};
+    const { title, message, url, tab } = request.body || {};
 
     if (!title || !message) {
       return reply.status(400).send({ error: 'Title and message are required for broadcast notification.' });
     }
 
     const payload = {
-      title: `📢 ${title}`,
+      title: title,
       body: message,
-      url: url || '/'
+      url: url || '/?tab=announcements',
+      tab: tab || 'announcements',
+      tag: `admin-broadcast-${Date.now()}`
     };
 
     const result = await broadcastPushNotification(payload);

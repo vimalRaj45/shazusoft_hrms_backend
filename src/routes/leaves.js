@@ -1,26 +1,24 @@
-import { getRows, addRow, updateRow } from '../db.js';
+import { getRows, addRow, updateRow, getLeavePolicy } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { sendPushNotification } from '../pushService.js';
 
-// Standard Corporate Business Leave Policy Quotas (Annual)
-const LEAVE_QUOTAS = {
-  'Casual Leave': 12, // 1 per month
-  'Sick Leave': 12,   // 1 per month
-  'Paid Leave': 12    // 1 per month
-};
-
-const MONTHLY_PERMISSION_LIMIT = 2; // Max 2 short permission passes per month (up to 2h each)
-
 export default async function leaveRoutes(fastify, options) {
-  // GET /api/leaves/balances (Get user's real-time leave quota balance & monthly permissions)
+  // GET /api/leaves/policy (Read current active leave policy)
+  fastify.get('/policy', { preHandler: [verifyAuth] }, async (request, reply) => {
+    const policy = await getLeavePolicy();
+    return { policy };
+  });
+
+  // GET /api/leaves/balances (Get user's real-time monthly leave quota balance & monthly permissions)
   fastify.get('/balances', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { employee_id } = request.query || {};
     const targetEmpId = request.user.role === 'admin' && employee_id ? employee_id : request.user.id;
     const currentMonth = format(new Date(), 'yyyy-MM');
 
-    const [allLeaves, allPermissions] = await Promise.all([
+    const [policy, allLeaves, allPermissions] = await Promise.all([
+      getLeavePolicy(),
       getRows('Leaves'),
       getRows('Permissions')
     ]);
@@ -28,21 +26,35 @@ export default async function leaveRoutes(fastify, options) {
     const userLeaves = allLeaves.filter(l => l.employee_id === targetEmpId);
     const userPermissions = allPermissions.filter(p => p.employee_id === targetEmpId);
 
-    // Calculate Leave Balances by Type
+    // Strictly monthly-wise calculation: filter leaves falling in current month
+    const thisMonthLeaves = userLeaves.filter(l => {
+      const startMonth = l.start_date ? l.start_date.substring(0, 7) : '';
+      const endMonth = l.end_date ? l.end_date.substring(0, 7) : '';
+      return startMonth === currentMonth || endMonth === currentMonth;
+    });
+
+    const monthlyQuotas = {
+      'Casual Leave': policy.casual_leave,
+      'Sick Leave': policy.sick_leave,
+      'Paid Leave': policy.paid_leave
+    };
+
+    // Calculate Monthly Leave Balances by Type
     const balances = {};
-    for (const [type, totalQuota] of Object.entries(LEAVE_QUOTAS)) {
-      const approvedDays = userLeaves
+    for (const [type, monthlyQuota] of Object.entries(monthlyQuotas)) {
+      const approvedDays = thisMonthLeaves
         .filter(l => l.leave_type === type && l.status === 'Approved')
         .reduce((sum, l) => sum + (parseFloat(l.total_days) || 0), 0);
 
-      const pendingDays = userLeaves
+      const pendingDays = thisMonthLeaves
         .filter(l => l.leave_type === type && l.status === 'Pending')
         .reduce((sum, l) => sum + (parseFloat(l.total_days) || 0), 0);
 
-      const remaining = Math.max(0, totalQuota - approvedDays);
+      const remaining = Math.max(0, monthlyQuota - approvedDays);
 
       balances[type] = {
-        totalQuota,
+        monthlyQuota,
+        totalQuota: monthlyQuota, // Backwards-compatible field
         approvedDays,
         pendingDays,
         remainingDays: remaining,
@@ -61,14 +73,17 @@ export default async function leaveRoutes(fastify, options) {
     return {
       employeeId: targetEmpId,
       currentMonth,
+      isMonthlyPolicy: true,
+      policy,
       balances,
       permissionPolicy: {
-        monthlyLimit: MONTHLY_PERMISSION_LIMIT,
+        monthlyLimit: policy.monthly_permission_limit,
+        maxPermissionHours: policy.max_permission_hours,
         usedThisMonth: totalUsedPermissions,
         approvedThisMonth,
         pendingThisMonth,
-        remainingThisMonth: Math.max(0, MONTHLY_PERMISSION_LIMIT - totalUsedPermissions),
-        limitReached: totalUsedPermissions >= MONTHLY_PERMISSION_LIMIT
+        remainingThisMonth: Math.max(0, policy.monthly_permission_limit - totalUsedPermissions),
+        limitReached: totalUsedPermissions >= policy.monthly_permission_limit
       }
     };
   });
@@ -93,13 +108,29 @@ export default async function leaveRoutes(fastify, options) {
     }
 
     const totalDays = Math.max(1, differenceInCalendarDays(endDateObj, startDateObj) + 1);
+    const targetMonth = start_date.substring(0, 7);
 
-    // Check quota balance
-    const allLeaves = await getRows('Leaves');
-    const userLeaves = allLeaves.filter(l => l.employee_id === request.user.id && l.leave_type === leave_type && l.status === 'Approved');
-    const usedDays = userLeaves.reduce((sum, l) => sum + (parseFloat(l.total_days) || 0), 0);
-    const quota = LEAVE_QUOTAS[leave_type] || 12;
-    const remaining = quota - usedDays;
+    // Check monthly quota balance for the requested month
+    const [policy, allLeaves] = await Promise.all([
+      getLeavePolicy(),
+      getRows('Leaves')
+    ]);
+
+    const monthlyQuotas = {
+      'Casual Leave': policy.casual_leave,
+      'Sick Leave': policy.sick_leave,
+      'Paid Leave': policy.paid_leave
+    };
+
+    const userMonthLeaves = allLeaves.filter(l =>
+      l.employee_id === request.user.id &&
+      l.leave_type === leave_type &&
+      l.status === 'Approved' &&
+      (l.start_date?.startsWith(targetMonth) || l.end_date?.startsWith(targetMonth))
+    );
+    const usedDays = userMonthLeaves.reduce((sum, l) => sum + (parseFloat(l.total_days) || 0), 0);
+    const quota = monthlyQuotas[leave_type] ?? 1;
+    const remaining = Math.max(0, quota - usedDays);
 
     const isExceedingQuota = totalDays > remaining;
 
@@ -111,7 +142,7 @@ export default async function leaveRoutes(fastify, options) {
       start_date,
       end_date,
       total_days: String(totalDays),
-      reason: isExceedingQuota ? `${reason} (⚠️ Exceeds annual ${leave_type} quota - Subject to Loss of Pay)` : reason,
+      reason: isExceedingQuota ? `${reason} (Exceeds monthly ${leave_type} quota - Subject to Loss of Pay)` : reason,
       status: 'Pending',
       reviewed_by: '',
       applied_at: new Date().toISOString()
@@ -119,17 +150,18 @@ export default async function leaveRoutes(fastify, options) {
 
     const saved = await addRow('Leaves', newLeave);
 
-    // 🔔 Notify admin of new leave application
+    // Push notification to admin of new leave application (with deep-link tab)
     sendPushNotification('EMP-ADMIN-01', {
-      title: '📅 New Leave Request',
+      title: 'New Leave Request',
       body: `${request.user.name} applied for ${leave_type} (${start_date} – ${end_date}, ${totalDays} day(s)).`,
-      url: '/dashboard',
+      url: '/?tab=leaves',
+      tab: 'leaves',
       tag: `leave-apply-${saved.id}`
     }).catch(() => {});
 
     return {
       message: isExceedingQuota 
-        ? `Leave submitted. Note: This request exceeds your available ${leave_type} balance (${remaining} days remaining).`
+        ? `Leave submitted. Note: This request exceeds your available monthly ${leave_type} balance (${remaining} days remaining this month).`
         : 'Leave application submitted successfully!',
       leave: saved,
       quotaWarning: isExceedingQuota
@@ -145,14 +177,18 @@ export default async function leaveRoutes(fastify, options) {
     }
 
     const currentMonth = format(parseISO(date), 'yyyy-MM');
-    const allPermissions = await getRows('Permissions');
+    const [policy, allPermissions] = await Promise.all([
+      getLeavePolicy(),
+      getRows('Permissions')
+    ]);
+    const monthlyLimit = policy.monthly_permission_limit || 2;
     const thisMonthPerms = allPermissions.filter(
       p => p.employee_id === request.user.id && p.date?.startsWith(currentMonth) && p.status !== 'Rejected'
     );
 
-    if (thisMonthPerms.length >= MONTHLY_PERMISSION_LIMIT) {
+    if (thisMonthPerms.length >= monthlyLimit) {
       return reply.status(400).send({
-        error: `Monthly Permission Limit Reached: You have already used ${thisMonthPerms.length} out of ${MONTHLY_PERMISSION_LIMIT} allowed permissions for this month.`
+        error: `Monthly Permission Limit Reached: You have already used ${thisMonthPerms.length} out of ${monthlyLimit} allowed permissions for this month.`
       });
     }
 
@@ -172,16 +208,17 @@ export default async function leaveRoutes(fastify, options) {
 
     const saved = await addRow('Permissions', newPermission);
 
-    // 🔔 Notify admin of new permission request
+    // Push notification to admin of new permission request (with deep link tab)
     sendPushNotification('EMP-ADMIN-01', {
-      title: '⏰ New Permission Request',
+      title: 'New Permission Request',
       body: `${request.user.name} requested a short permission on ${date} (${start_time} – ${end_time}, ${duration_hours} hrs).`,
-      url: '/dashboard',
+      url: '/?tab=leaves',
+      tab: 'leaves',
       tag: `perm-apply-${saved.id}`
     }).catch(() => {});
 
     return {
-      message: `Permission request for ${duration_hours} hrs submitted successfully! (${thisMonthPerms.length + 1} of ${MONTHLY_PERMISSION_LIMIT} monthly permissions used).`,
+      message: `Permission request for ${duration_hours} hrs submitted successfully! (${thisMonthPerms.length + 1} of ${monthlyLimit} monthly permissions used).`,
       permission: saved
     };
   });
@@ -280,12 +317,12 @@ export default async function leaveRoutes(fastify, options) {
       }
     }
 
-    // 🔔 Push notification to employee about leave decision
-    const leaveEmoji = status === 'Approved' ? '✅' : '❌';
+    // Push notification to employee about leave decision
     sendPushNotification(existing.employee_id, {
-      title: `${leaveEmoji} Leave ${status}`,
+      title: `Leave ${status}`,
       body: `Your ${existing.leave_type} request (${existing.start_date} – ${existing.end_date}) has been ${status.toLowerCase()} by ${request.user.name}.`,
-      url: '/dashboard',
+      url: '/?tab=leaves',
+      tab: 'leaves',
       tag: `leave-status-${id}`
     }).catch(() => {});
 
@@ -358,12 +395,12 @@ export default async function leaveRoutes(fastify, options) {
       }
     }
 
-    // 🔔 Push notification to employee about permission decision
-    const permEmoji = status === 'Approved' ? '✅' : '❌';
+    // Push notification to employee about permission decision
     sendPushNotification(existing.employee_id, {
-      title: `${permEmoji} Permission ${status}`,
+      title: `Permission ${status}`,
       body: `Your permission request on ${existing.date} (${existing.start_time} – ${existing.end_time}) has been ${status.toLowerCase()} by ${request.user.name}.`,
-      url: '/dashboard',
+      url: '/?tab=leaves',
+      tab: 'leaves',
       tag: `perm-status-${id}`
     }).catch(() => {});
 

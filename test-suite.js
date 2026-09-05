@@ -348,6 +348,23 @@ async function runAllTests() {
     expect(body.geofence.env_only).toBe(true);
   });
 
+  await assertTest('GET /api/admin/live-status returns 12-hour AM/PM format timestamps', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/live-status`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.board).toBeTruthy();
+    body.board.forEach(member => {
+      if (member.loginTime && member.loginTime !== '--:--' && member.loginTime !== '--') {
+        expect(/AM|PM/i.test(member.loginTime)).toBe(true);
+      }
+      if (member.logoutTime && member.logoutTime !== '--:--' && member.logoutTime !== '--') {
+        expect(/AM|PM/i.test(member.logoutTime)).toBe(true);
+      }
+    });
+  });
+
   // ─────────────────────────────────────────────────────────────
   // 4. GPS ATTENDANCE, WFH BYPASS & TIMESHEETS
   // ─────────────────────────────────────────────────────────────
@@ -833,6 +850,64 @@ async function runAllTests() {
     const body = await res.json();
     expect(body.success).toBe(true);
     expect(body.employee.documents_frozen).toBe(false);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // MONTHLY LEAVE POLICY & QUOTA TESTS
+  // ─────────────────────────────────────────────────────────────
+  await assertTest('GET /api/leaves/policy (Staff Fetches Active Monthly Policy) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/leaves/policy`, {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.policy).toBeTruthy();
+    expect(typeof body.policy.casual_leave).toBe('number');
+    expect(typeof body.policy.monthly_permission_limit).toBe('number');
+  });
+
+  await assertTest('PUT /api/admin/leave-policy (Non-Admin Restricted) -> 403 Forbidden', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/leave-policy`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${staffToken}`
+      },
+      body: JSON.stringify({ casual_leave: 2 })
+    });
+    expect(res.status).toBe(403);
+  });
+
+  await assertTest('PUT /api/admin/leave-policy (Admin Updates Monthly Quotas) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/leave-policy`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        casual_leave: 1.5,
+        sick_leave: 1.0,
+        paid_leave: 1.0,
+        monthly_permission_limit: 3,
+        max_permission_hours: 2.0
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.policy.casual_leave).toBe(1.5);
+    expect(body.policy.monthly_permission_limit).toBe(3);
+  });
+
+  await assertTest('GET /api/leaves/balances (Recalculates with Active Monthly Quota) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/leaves/balances`, {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.isMonthlyPolicy).toBe(true);
+    expect(body.balances['Casual Leave'].totalQuota).toBe(1.5);
+    expect(body.permissionPolicy.monthlyLimit).toBe(3);
   });
 
   // ─────────────────────────────────────────────────────────────

@@ -3,6 +3,53 @@ import { verifyAuth, verifyAdmin } from '../auth.js';
 import { verifyGeofence } from '../geofence.js';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
 
+export function formatTime12h(timeStr) {
+  if (!timeStr || timeStr === '--' || timeStr === '--:--' || timeStr === 'In Progress') {
+    return timeStr || '--:--';
+  }
+  const trimmed = String(timeStr).trim();
+  if (/AM|PM/i.test(trimmed)) return trimmed;
+  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = match[2];
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
+  }
+  return trimmed;
+}
+
+export function parseTimeStrToDate(dateStr, timeStr) {
+  if (!timeStr) return new Date();
+  const trimmed = String(timeStr).trim();
+  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+  if (match12) {
+    let hours = parseInt(match12[1], 10);
+    const minutes = parseInt(match12[2], 10);
+    const seconds = match12[3] ? parseInt(match12[3], 10) : 0;
+    const ampm = match12[4].toUpperCase();
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d, hours, minutes, seconds);
+  }
+  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (match24) {
+    const hours = parseInt(match24[1], 10);
+    const minutes = parseInt(match24[2], 10);
+    const seconds = match24[3] ? parseInt(match24[3], 10) : 0;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d, hours, minutes, seconds);
+  }
+  try {
+    const parsed = new Date(`${dateStr}T${trimmed}`);
+    if (!isNaN(parsed.getTime())) return parsed;
+  } catch (e) {}
+  return new Date();
+}
+
 const normalizeDateStr = (d) => {
   if (!d) return '';
   if (d instanceof Date) return d.toISOString().slice(0, 10);
@@ -81,7 +128,7 @@ export default async function attendanceRoutes(fastify, options) {
       };
     }
 
-    const nowTimeStr = format(now, 'HH:mm:ss');
+    const nowTimeStr = format(now, 'hh:mm:ss a');
     const attendanceRows = await getRows('Attendance');
     const existing = attendanceRows.find(
       r => r.employee_id === request.user.id && r.date === todayStr
@@ -150,7 +197,7 @@ export default async function attendanceRoutes(fastify, options) {
     }
 
     const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const nowTimeStr = format(new Date(), 'HH:mm:ss');
+    const nowTimeStr = format(new Date(), 'hh:mm:ss a');
 
     const attendanceRows = await getRows('Attendance');
     const existing = attendanceRows.find(
@@ -166,7 +213,7 @@ export default async function attendanceRoutes(fastify, options) {
     }
 
     // Calculate duration from login to logout
-    const loginDateTime = parseISO(`${todayStr}T${existing.login_time}`);
+    const loginDateTime = parseTimeStrToDate(todayStr, existing.login_time);
     const logoutDateTime = new Date();
     const diffMinutes = Math.max(0, differenceInMinutes(logoutDateTime, loginDateTime));
     const totalHours = (diffMinutes / 60).toFixed(2);
@@ -374,8 +421,8 @@ export default async function attendanceRoutes(fastify, options) {
               is_future: false,
               is_today: isToday,
               status: record.status || 'Present',
-              login_time: record.login_time || '--',
-              logout_time: record.logout_time || (isToday ? 'In Progress' : '--'),
+              login_time: record.login_time ? formatTime12h(record.login_time) : '--',
+              logout_time: record.logout_time ? (record.logout_time === 'In Progress' ? 'In Progress' : formatTime12h(record.logout_time)) : (isToday ? 'In Progress' : '--'),
               total_hours: record.total_hours || '0',
               net_hours: record.net_hours || record.total_hours || '0',
               in_geofence: record.in_geofence || 'TRUE',
@@ -639,8 +686,8 @@ export default async function attendanceRoutes(fastify, options) {
               is_future: false,
               is_today: isToday,
               status: record.status || 'Present',
-              login_time: record.login_time || '--',
-              logout_time: record.logout_time || (isToday ? 'In Progress' : '--'),
+              login_time: record.login_time ? formatTime12h(record.login_time) : '--',
+              logout_time: record.logout_time ? (record.logout_time === 'In Progress' ? 'In Progress' : formatTime12h(record.logout_time)) : (isToday ? 'In Progress' : '--'),
               total_hours: record.total_hours || '0',
               net_hours: record.net_hours || record.total_hours || '0',
               in_geofence: record.in_geofence || 'TRUE',
@@ -773,8 +820,8 @@ export default async function attendanceRoutes(fastify, options) {
     let breakHours = '0.00';
 
     if (logout_time) {
-      const loginDateTime = new Date(`${date}T${login_time.length === 5 ? login_time + ':00' : login_time}`);
-      const logoutDateTime = new Date(`${date}T${logout_time.length === 5 ? logout_time + ':00' : logout_time}`);
+      const loginDateTime = parseTimeStrToDate(date, login_time);
+      const logoutDateTime = parseTimeStrToDate(date, logout_time);
       const diffMin = Math.max(0, differenceInMinutes(logoutDateTime, loginDateTime));
       totalHours = (diffMin / 60).toFixed(2);
       netHours = totalHours;
@@ -785,11 +832,14 @@ export default async function attendanceRoutes(fastify, options) {
       r => r.employee_id === employee_id && r.date === date
     );
 
+    const formattedLoginTime = formatTime12h(login_time);
+    const formattedLogoutTime = logout_time ? formatTime12h(logout_time) : '';
+
     let savedAttendance;
     if (existing) {
       savedAttendance = await updateRow('Attendance', 'id', existing.id, {
-        login_time,
-        logout_time: logout_time || existing.logout_time || '',
+        login_time: formattedLoginTime,
+        logout_time: formattedLogoutTime || existing.logout_time || '',
         total_hours: totalHours !== '0.00' ? totalHours : existing.total_hours,
         break_hours: existing.break_hours || '0.00',
         net_hours: netHours !== '0.00' ? netHours : existing.net_hours,
@@ -802,8 +852,8 @@ export default async function attendanceRoutes(fastify, options) {
         date,
         employee_id,
         employee_name,
-        login_time,
-        logout_time: logout_time || '',
+        login_time: formattedLoginTime,
+        logout_time: formattedLogoutTime,
         total_hours: totalHours,
         break_hours: breakHours,
         net_hours: netHours,

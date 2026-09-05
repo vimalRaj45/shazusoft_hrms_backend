@@ -21,10 +21,15 @@ const TABLE_MAP = {
   Support_Tickets: 'support_tickets',
   Ticket_Messages: 'ticket_messages',
   Broadcasts: 'broadcasts',
-  Push_Subscriptions: 'push_subscriptions'
+  Push_Subscriptions: 'push_subscriptions',
+  Leave_Policies: 'leave_policies'
 };
 
 const TABLE_HEADERS = {
+  Leave_Policies: [
+    'id', 'policy_key', 'monthly_casual_leave', 'monthly_sick_leave', 'monthly_paid_leave',
+    'monthly_permission_limit', 'max_permission_hours', 'updated_at', 'updated_by'
+  ],
   Employees: [
     'id', 'name', 'email', 'password_hash', 'role', 'department', 'designation', 'work_mode', 'status',
     'phone', 'avatar_url', 'personal_info', 'statutory_info', 'emergency_contacts', 'documents_json', 'profile_completeness',
@@ -88,7 +93,8 @@ const memoryDB = {
   Support_Tickets: [],
   Ticket_Messages: [],
   Broadcasts: [],
-  Push_Subscriptions: []
+  Push_Subscriptions: [],
+  Leave_Policies: []
 };
 
 // 15-second cache for high-speed read operations
@@ -364,6 +370,17 @@ async function initTables() {
       auth TEXT NOT NULL,
       user_agent TEXT,
       created_at TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS leave_policies (
+      id VARCHAR(100) PRIMARY KEY,
+      policy_key VARCHAR(100) UNIQUE NOT NULL,
+      monthly_casual_leave NUMERIC DEFAULT 1,
+      monthly_sick_leave NUMERIC DEFAULT 1,
+      monthly_paid_leave NUMERIC DEFAULT 1,
+      monthly_permission_limit INT DEFAULT 2,
+      max_permission_hours INT DEFAULT 2,
+      updated_at TEXT,
+      updated_by TEXT
     );`
   ];
 
@@ -638,3 +655,60 @@ export async function deleteRow(tableName, matchField, matchValue) {
   setCachedData(tableName, memoryDB[tableName]);
   return memoryDB[tableName].length < initialLength;
 }
+
+/**
+ * Get the active Monthly Leave Quotas and Permission limits
+ */
+export async function getLeavePolicy() {
+  const policies = await getRows('Leave_Policies');
+  const defaultPolicy = policies.find(p => p.policy_key === 'default');
+  if (defaultPolicy) {
+    return {
+      casual_leave: parseFloat(defaultPolicy.monthly_casual_leave) || 1,
+      sick_leave: parseFloat(defaultPolicy.monthly_sick_leave) || 1,
+      paid_leave: parseFloat(defaultPolicy.monthly_paid_leave) || 1,
+      monthly_permission_limit: parseInt(defaultPolicy.monthly_permission_limit, 10) || 2,
+      max_permission_hours: parseInt(defaultPolicy.max_permission_hours, 10) || 2,
+      updated_at: defaultPolicy.updated_at || null,
+      updated_by: defaultPolicy.updated_by || 'System Default'
+    };
+  }
+  return {
+    casual_leave: 1,
+    sick_leave: 1,
+    paid_leave: 1,
+    monthly_permission_limit: 2,
+    max_permission_hours: 2,
+    updated_at: null,
+    updated_by: 'System Default'
+  };
+}
+
+/**
+ * Admin update for Monthly Leave Quotas and Permission limits
+ */
+export async function updateLeavePolicy(policyData, adminUser = 'Admin') {
+  const existing = await getRows('Leave_Policies');
+  const found = existing.find(p => p.policy_key === 'default');
+  const now = new Date().toISOString();
+  const record = {
+    policy_key: 'default',
+    monthly_casual_leave: parseFloat(policyData.casual_leave ?? policyData.monthly_casual_leave) || 1,
+    monthly_sick_leave: parseFloat(policyData.sick_leave ?? policyData.monthly_sick_leave) || 1,
+    monthly_paid_leave: parseFloat(policyData.paid_leave ?? policyData.monthly_paid_leave) || 1,
+    monthly_permission_limit: parseInt(policyData.monthly_permission_limit, 10) || 2,
+    max_permission_hours: parseInt(policyData.max_permission_hours, 10) || 2,
+    updated_at: now,
+    updated_by: adminUser
+  };
+
+  if (found) {
+    await updateRow('Leave_Policies', 'policy_key', 'default', record);
+  } else {
+    record.id = `POLICY-${Date.now()}`;
+    await addRow('Leave_Policies', record);
+  }
+
+  return getLeavePolicy();
+}
+

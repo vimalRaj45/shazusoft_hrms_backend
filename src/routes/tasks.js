@@ -51,7 +51,8 @@ export default async function tasksRoutes(fastify, options) {
     sendPushNotification(assigned_to_id, {
       title: 'New Task Assigned',
       body: `"${task_title}" on ${project_name} — due ${newTask.due_date}. Assigned by ${request.user.name}.`,
-      url: '/dashboard',
+      url: '/?tab=task-tracker',
+      tab: 'task-tracker',
       tag: `task-assigned-${saved.id}`
     }).catch(() => {});
 
@@ -125,9 +126,10 @@ export default async function tasksRoutes(fastify, options) {
 
       // 🔔 Push notification to admin: task completed
       sendPushNotification('EMP-ADMIN-01', {
-        title: '✅ Task Completed',
+        title: 'Task Completed',
         body: `${existing.assigned_to_name} completed "${existing.task_title}" on ${existing.project_name}.`,
-        url: '/dashboard',
+        url: '/?tab=admin-tasks',
+        tab: 'admin-tasks',
         tag: `task-completed-${id}`
       }).catch(() => {});
     }
