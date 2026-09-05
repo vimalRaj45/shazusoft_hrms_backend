@@ -2,22 +2,126 @@ import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
 
+function escapeRegex(str) {
+  return (str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Check if user is creator, assigned, or mentioned in subject, description, messages, or logs
+function checkUserParticipation(user, ticket, messages = [], commLogs = []) {
+  if (!user || !ticket) return false;
+  if (user.role === 'admin' || user.role === 'manager') return true;
+  if (ticket.creator_id === user.id) return true;
+
+  // Assigned to user
+  if (ticket.assigned_to_id) {
+    const assignedIds = ticket.assigned_to_id.split(',').map(s => s.trim());
+    if (assignedIds.includes(user.id)) return true;
+  }
+
+  const userName = (user.name || '').trim();
+  const firstName = userName.split(' ')[0];
+  const nameRegex = userName ? new RegExp(`@${escapeRegex(userName)}\\b`, 'i') : null;
+  const firstNameRegex = firstName && firstName.length >= 3 ? new RegExp(`@${escapeRegex(firstName)}\\b`, 'i') : null;
+  const idRegex = new RegExp(`@${escapeRegex(user.id)}\\b`, 'i');
+
+  const ticketContent = `${ticket.subject || ''} ${ticket.description || ''}`;
+  if (
+    (nameRegex && nameRegex.test(ticketContent)) ||
+    (firstNameRegex && firstNameRegex.test(ticketContent)) ||
+    idRegex.test(ticketContent)
+  ) {
+    return true;
+  }
+
+  // Check ticket messages
+  for (const m of messages) {
+    if (m.ticket_id === ticket.id) {
+      if (m.sender_id === user.id) return true;
+      const text = m.message || '';
+      if (
+        (nameRegex && nameRegex.test(text)) ||
+        (firstNameRegex && firstNameRegex.test(text)) ||
+        idRegex.test(text)
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // Check Communications_Log
+  for (const log of commLogs) {
+    if (
+      log.type === 'mention' &&
+      log.recipient_id === user.id &&
+      (log.metadata_json?.includes(ticket.id) || log.metadata_json?.includes(ticket.ticket_number))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Process and dispatch @mentions in ticket description or message
+async function processMentions({ content, explicitMentions, ticket, sender, excludeIds = [], allEmployees }) {
+  const mentionedIds = new Set(Array.isArray(explicitMentions) ? explicitMentions : []);
+  const now = new Date().toISOString();
+
+  allEmployees.forEach(emp => {
+    if (emp.status === 'active' && emp.id !== sender.id) {
+      const fullNameRegex = new RegExp(`@${escapeRegex(emp.name)}\\b`, 'i');
+      const firstName = (emp.name || '').split(' ')[0];
+      const firstNameRegex = firstName && firstName.length >= 3 ? new RegExp(`@${escapeRegex(firstName)}\\b`, 'i') : null;
+      const idRegex = new RegExp(`@${escapeRegex(emp.id)}\\b`, 'i');
+
+      if (fullNameRegex.test(content) || (firstNameRegex && firstNameRegex.test(content)) || idRegex.test(content)) {
+        mentionedIds.add(emp.id);
+      }
+    }
+  });
+
+  for (const empId of mentionedIds) {
+    if (empId !== sender.id && !excludeIds.includes(empId)) {
+      const targetEmp = allEmployees.find(e => e.id === empId);
+      sendPushNotification(empId, {
+        title: `💬 ${sender.name} mentioned you`,
+        body: `"${content.trim().slice(0, 90)}" — Ticket #${ticket.ticket_number}`,
+        url: '/?tab=chat-hub',
+        tab: 'chat-hub',
+        tag: `mention-${ticket.id}-${empId}`
+      }).catch(() => {});
+
+      await addRow('Communications_Log', {
+        id: `COMM-${Date.now()}-${empId}`,
+        type: 'mention',
+        sender_id: sender.id,
+        sender_name: sender.name,
+        recipient_id: empId,
+        recipient_name: targetEmp?.name || empId,
+        subject: `Mentioned in ${ticket.ticket_number}`,
+        message: content.trim().slice(0, 160),
+        metadata_json: JSON.stringify({ ticket_id: ticket.id, ticket_number: ticket.ticket_number }),
+        created_at: now
+      }).catch(() => {});
+    }
+  }
+  return Array.from(mentionedIds);
+}
+
 export default async function ticketsRoutes(fastify, options) {
   // GET /api/tickets - List all support tickets / issues
   fastify.get('/', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { status, category, priority, search } = request.query || {};
     const isAdmin = request.user.role === 'admin' || request.user.role === 'manager';
 
-    const [allTickets, allMessages] = await Promise.all([
+    const [allTickets, allMessages, allCommLogs] = await Promise.all([
       getRows('Support_Tickets'),
-      getRows('Ticket_Messages')
+      getRows('Ticket_Messages'),
+      getRows('Communications_Log')
     ]);
 
-    // Role-based visibility
-    let filtered = allTickets;
-    if (!isAdmin) {
-      filtered = allTickets.filter(t => t.creator_id === request.user.id);
-    }
+    // Role-based visibility: Admins see all, employees see tickets they created OR are mentioned/participating in
+    let filtered = allTickets.filter(t => checkUserParticipation(request.user, t, allMessages, allCommLogs));
 
     // Apply filters
     if (status && status !== 'all') {
@@ -46,6 +150,8 @@ export default async function ticketsRoutes(fastify, options) {
       const latest = sortedMessages[sortedMessages.length - 1] || null;
       return {
         ...ticket,
+        is_creator: ticket.creator_id === request.user.id,
+        is_mentioned: ticket.creator_id !== request.user.id && !isAdmin,
         message_count: messages.length,
         latest_message: latest ? {
           message: latest.message,
@@ -59,8 +165,8 @@ export default async function ticketsRoutes(fastify, options) {
     // Sort by updated_at or created_at descending
     enriched.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
 
-    // Calculate Summary Metrics
-    const baseList = isAdmin ? allTickets : allTickets.filter(t => t.creator_id === request.user.id);
+    // Calculate Summary Metrics for accessible tickets
+    const baseList = allTickets.filter(t => checkUserParticipation(request.user, t, allMessages, allCommLogs));
     const metrics = {
       total: baseList.length,
       open: baseList.filter(t => t.status === 'Open').length,
@@ -78,7 +184,8 @@ export default async function ticketsRoutes(fastify, options) {
       category,
       subject,
       description,
-      priority
+      priority,
+      mentions
     } = request.body || {};
 
     if (!subject || !category || !description) {
@@ -88,6 +195,7 @@ export default async function ticketsRoutes(fastify, options) {
     }
 
     const allTickets = await getRows('Support_Tickets');
+    const allEmployees = await getRows('Employees');
     const ticketSeq = allTickets.length + 101;
     const ticketNumber = `TKT-${ticketSeq}`;
     const ticketId = `TKT-${Date.now()}-${request.user.id}`;
@@ -135,6 +243,17 @@ export default async function ticketsRoutes(fastify, options) {
       tag: `ticket-new-${ticketId}`
     }).catch(() => {});
 
+    // Detect and notify any @mentioned staff members in initial ticket description & subject
+    const initialContent = `${subject} ${description}`;
+    await processMentions({
+      content: initialContent,
+      explicitMentions: mentions,
+      ticket: savedTicket,
+      sender: request.user,
+      excludeIds: ['EMP-ADMIN-01'],
+      allEmployees
+    });
+
     return {
       message: `Support ticket ${ticketNumber} raised successfully.`,
       ticket: savedTicket
@@ -144,36 +263,51 @@ export default async function ticketsRoutes(fastify, options) {
   // GET /api/tickets/:id - Get ticket details
   fastify.get('/:id', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { id } = request.params;
-    const allTickets = await getRows('Support_Tickets');
+    const [allTickets, allMessages, allCommLogs] = await Promise.all([
+      getRows('Support_Tickets'),
+      getRows('Ticket_Messages'),
+      getRows('Communications_Log')
+    ]);
     const ticket = allTickets.find(t => t.id === id || t.ticket_number === id);
 
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found.' });
     }
 
-    // Access check
-    if (request.user.role !== 'admin' && ticket.creator_id !== request.user.id) {
+    // Access check: Admin or participant (creator, assigned, or mentioned)
+    const isParticipant = checkUserParticipation(request.user, ticket, allMessages, allCommLogs);
+    if (!isParticipant) {
       return reply.status(403).send({ error: 'Unauthorized to view this ticket.' });
     }
 
-    return { ticket };
+    return {
+      ticket: {
+        ...ticket,
+        is_creator: ticket.creator_id === request.user.id,
+        is_mentioned: ticket.creator_id !== request.user.id && request.user.role !== 'admin' && request.user.role !== 'manager'
+      }
+    };
   });
 
   // GET /api/tickets/:id/messages - Get chat messages for ticket
   fastify.get('/:id/messages', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { id } = request.params;
-    const allTickets = await getRows('Support_Tickets');
+    const [allTickets, allMessages, allCommLogs] = await Promise.all([
+      getRows('Support_Tickets'),
+      getRows('Ticket_Messages'),
+      getRows('Communications_Log')
+    ]);
     const ticket = allTickets.find(t => t.id === id || t.ticket_number === id);
 
     if (!ticket) {
       return reply.status(404).send({ error: 'Ticket not found.' });
     }
 
-    if (request.user.role !== 'admin' && ticket.creator_id !== request.user.id) {
+    const isParticipant = checkUserParticipation(request.user, ticket, allMessages, allCommLogs);
+    if (!isParticipant) {
       return reply.status(403).send({ error: 'Unauthorized to view these messages.' });
     }
 
-    const allMessages = await getRows('Ticket_Messages');
     const ticketMessages = allMessages
       .filter(m => m.ticket_id === ticket.id)
       .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
@@ -207,7 +341,12 @@ export default async function ticketsRoutes(fastify, options) {
       return reply.status(400).send({ error: 'Message cannot be empty.' });
     }
 
-    const allTickets = await getRows('Support_Tickets');
+    const [allTickets, allMessages, allCommLogs, allEmployees] = await Promise.all([
+      getRows('Support_Tickets'),
+      getRows('Ticket_Messages'),
+      getRows('Communications_Log'),
+      getRows('Employees')
+    ]);
     const ticket = allTickets.find(t => t.id === id || t.ticket_number === id);
 
     if (!ticket) {
@@ -215,7 +354,8 @@ export default async function ticketsRoutes(fastify, options) {
     }
 
     const isAdmin = request.user.role === 'admin' || request.user.role === 'manager';
-    if (!isAdmin && ticket.creator_id !== request.user.id) {
+    const isParticipant = checkUserParticipation(request.user, ticket, allMessages, allCommLogs);
+    if (!isAdmin && !isParticipant) {
       return reply.status(403).send({ error: 'Unauthorized to post to this ticket.' });
     }
 
@@ -246,60 +386,57 @@ export default async function ticketsRoutes(fastify, options) {
 
     await updateRow('Support_Tickets', 'id', ticket.id, updatePayload);
 
-    // Standard push notification to primary ticket counterparty
-    const isAdminSender = request.user.role === 'admin' || request.user.role === 'manager';
-    const notifyId = isAdminSender ? ticket.creator_id : 'EMP-ADMIN-01';
-    sendPushNotification(notifyId, {
-      title: 'New Message on Ticket',
-      body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
-      url: '/?tab=chat-hub',
-      tab: 'chat-hub',
-      tag: `ticket-msg-${ticket.id}`
-    }).catch(() => {});
+    // Notifications:
+    // If Admin sends: notify ticket creator
+    // If Creator sends: notify admin
+    // If Mentioned Participant sends: notify creator AND admin
+    const excludedNotify = [request.user.id];
+    if (isAdmin) {
+      sendPushNotification(ticket.creator_id, {
+        title: 'New Message on Ticket',
+        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
+        url: '/?tab=chat-hub',
+        tab: 'chat-hub',
+        tag: `ticket-msg-${ticket.id}`
+      }).catch(() => {});
+      excludedNotify.push(ticket.creator_id);
+    } else if (request.user.id === ticket.creator_id) {
+      sendPushNotification('EMP-ADMIN-01', {
+        title: 'New Message on Ticket',
+        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
+        url: '/?tab=chat-hub',
+        tab: 'chat-hub',
+        tag: `ticket-msg-${ticket.id}`
+      }).catch(() => {});
+      excludedNotify.push('EMP-ADMIN-01');
+    } else {
+      // Mentioned participant replied: notify both ticket creator and admin
+      sendPushNotification(ticket.creator_id, {
+        title: 'Participant Replied on Ticket',
+        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
+        url: '/?tab=chat-hub',
+        tab: 'chat-hub',
+        tag: `ticket-msg-${ticket.id}`
+      }).catch(() => {});
+      sendPushNotification('EMP-ADMIN-01', {
+        title: 'Participant Replied on Ticket',
+        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
+        url: '/?tab=chat-hub',
+        tab: 'chat-hub',
+        tag: `ticket-msg-${ticket.id}`
+      }).catch(() => {});
+      excludedNotify.push(ticket.creator_id, 'EMP-ADMIN-01');
+    }
 
     // Detect and process @mentions in message
-    const allEmployees = await getRows('Employees');
-    const mentionedIds = new Set(Array.isArray(mentions) ? mentions : []);
-
-    // Auto-detect @Name in message text
-    allEmployees.forEach(emp => {
-      if (emp.status === 'active' && emp.id !== request.user.id) {
-        const fullNameRegex = new RegExp(`@${emp.name}\\b`, 'i');
-        const firstName = emp.name.split(' ')[0];
-        const firstNameRegex = firstName && firstName.length >= 3 ? new RegExp(`@${firstName}\\b`, 'i') : null;
-        if (fullNameRegex.test(message) || (firstNameRegex && firstNameRegex.test(message))) {
-          mentionedIds.add(emp.id);
-        }
-      }
+    await processMentions({
+      content: message.trim(),
+      explicitMentions: mentions,
+      ticket,
+      sender: request.user,
+      excludeIds: excludedNotify,
+      allEmployees
     });
-
-    // Send PWA Web Push notification to all mentioned staff members
-    for (const empId of mentionedIds) {
-      if (empId !== request.user.id && empId !== notifyId) {
-        const targetEmp = allEmployees.find(e => e.id === empId);
-        sendPushNotification(empId, {
-          title: `💬 ${request.user.name} mentioned you`,
-          body: `"${message.trim().slice(0, 90)}" — Ticket #${ticket.ticket_number}`,
-          url: '/?tab=chat-hub',
-          tab: 'chat-hub',
-          tag: `mention-${ticket.id}-${empId}`
-        }).catch(() => {});
-
-        // Audit mention event in Communications_Log
-        await addRow('Communications_Log', {
-          id: `COMM-${Date.now()}-${empId}`,
-          type: 'mention',
-          sender_id: request.user.id,
-          sender_name: request.user.name,
-          recipient_id: empId,
-          recipient_name: targetEmp?.name || empId,
-          subject: `Mentioned in ${ticket.ticket_number}`,
-          message: message.trim().slice(0, 160),
-          metadata_json: JSON.stringify({ ticket_id: ticket.id, ticket_number: ticket.ticket_number }),
-          created_at: now
-        }).catch(() => {});
-      }
-    }
 
     return {
       message: 'Message sent successfully.',
@@ -319,7 +456,11 @@ export default async function ticketsRoutes(fastify, options) {
       });
     }
 
-    const allTickets = await getRows('Support_Tickets');
+    const [allTickets, allMessages, allCommLogs] = await Promise.all([
+      getRows('Support_Tickets'),
+      getRows('Ticket_Messages'),
+      getRows('Communications_Log')
+    ]);
     const ticket = allTickets.find(t => t.id === id || t.ticket_number === id);
 
     if (!ticket) {
@@ -327,8 +468,8 @@ export default async function ticketsRoutes(fastify, options) {
     }
 
     const isAdmin = request.user.role === 'admin' || request.user.role === 'manager';
-    // Employees can only mark their own tickets as Resolved or Closed
-    if (!isAdmin && ticket.creator_id !== request.user.id) {
+    const isParticipant = checkUserParticipation(request.user, ticket, allMessages, allCommLogs);
+    if (!isAdmin && !isParticipant) {
       return reply.status(403).send({ error: 'Unauthorized to update this ticket.' });
     }
 

@@ -81,7 +81,7 @@ export default async function evaluationRoutes(fastify, options) {
     );
 
     const weeklyAssigned = assignedTasks.filter(
-      t => t.assigned_to_id === request.user.id
+      t => (t.assigned_to_id || '').split(',').map(s => s.trim()).includes(request.user.id)
     );
 
     const bullets = weeklyDone.map(
