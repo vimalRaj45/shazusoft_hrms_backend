@@ -1,4 +1,4 @@
-import { getRows, addRow } from '../sheets.js';
+import { getRows, addRow, updateRow } from '../db.js';
 import { comparePassword, verifyAuth } from '../auth.js';
 import { sendOTPEmail } from '../mailer.js';
 import bcrypt from 'bcryptjs';
@@ -11,7 +11,8 @@ export default async function authRoutes(fastify, options) {
   fastify.post('/send-otp', async (request, reply) => {
     const { email } = request.body || {};
 
-    if (!email || !email.trim()) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !email.trim() || !emailRegex.test(email.trim())) {
       return reply.status(400).send({ error: 'Please enter a valid work email address.' });
     }
 
@@ -120,7 +121,8 @@ export default async function authRoutes(fastify, options) {
       email: user.email,
       role: user.role,
       department: user.department,
-      designation: user.designation
+      designation: user.designation,
+      work_mode: user.work_mode || 'office'
     });
 
     return {
@@ -131,13 +133,117 @@ export default async function authRoutes(fastify, options) {
         email: user.email,
         role: user.role,
         department: user.department,
-        designation: user.designation
+        designation: user.designation,
+        work_mode: user.work_mode || 'office'
       }
     };
   });
 
   // GET /api/auth/me
   fastify.get('/me', { preHandler: [verifyAuth] }, async (request, reply) => {
-    return { user: request.user };
+    const employees = await getRows('Employees');
+    const freshUser = employees.find(e => e.id === request.user.id);
+    if (freshUser) {
+      const { password_hash, ...clean } = freshUser;
+      return { user: { ...clean, work_mode: clean.work_mode || 'office' } };
+    }
+    return { user: { ...request.user, work_mode: request.user.work_mode || 'office' } };
+  });
+
+  // GET /api/auth/profile - Retrieve full employee profile with company records
+  fastify.get('/profile', { preHandler: [verifyAuth] }, async (request, reply) => {
+    const employees = await getRows('Employees');
+    const user = employees.find(e => e.id === request.user.id);
+    if (!user) {
+      return reply.status(404).send({ error: 'Employee record not found.' });
+    }
+
+    let personalInfo = {};
+    let statutoryInfo = {};
+    let emergencyContacts = {};
+    let documents = [];
+
+    try { personalInfo = user.personal_info ? (typeof user.personal_info === 'string' ? JSON.parse(user.personal_info) : user.personal_info) : {}; } catch (e) {}
+    try { statutoryInfo = user.statutory_info ? (typeof user.statutory_info === 'string' ? JSON.parse(user.statutory_info) : user.statutory_info) : {}; } catch (e) {}
+    try { emergencyContacts = user.emergency_contacts ? (typeof user.emergency_contacts === 'string' ? JSON.parse(user.emergency_contacts) : user.emergency_contacts) : {}; } catch (e) {}
+    try { documents = user.documents_json ? (typeof user.documents_json === 'string' ? JSON.parse(user.documents_json) : user.documents_json) : []; } catch (e) {}
+
+    const { password_hash, ...cleanUser } = user;
+
+    return {
+      success: true,
+      profile: {
+        ...cleanUser,
+        phone: user.phone || '',
+        avatar_url: user.avatar_url || '',
+        personal_info: personalInfo,
+        statutory_info: statutoryInfo,
+        emergency_contacts: emergencyContacts,
+        documents: Array.isArray(documents) ? documents : [],
+        profile_completeness: parseInt(user.profile_completeness, 10) || 0
+      }
+    };
+  });
+
+  // PUT /api/auth/profile - Update employee profile and uploaded company documents
+  fastify.put('/profile', { preHandler: [verifyAuth] }, async (request, reply) => {
+    const {
+      phone,
+      avatar_url,
+      personal_info,
+      statutory_info,
+      emergency_contacts,
+      documents
+    } = request.body || {};
+
+    const employees = await getRows('Employees');
+    const user = employees.find(e => e.id === request.user.id);
+    if (!user) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    // Calculate completeness score based on filled fields
+    let filledCount = 0;
+    let totalFields = 12;
+
+    if (avatar_url || user.avatar_url) filledCount += 1;
+    if (phone || user.phone) filledCount += 1;
+    if (personal_info?.dob) filledCount += 1;
+    if (personal_info?.gender) filledCount += 1;
+    if (personal_info?.blood_group) filledCount += 1;
+    if (personal_info?.current_address) filledCount += 1;
+    if (emergency_contacts?.contact_name && emergency_contacts?.contact_phone) filledCount += 2;
+    if (statutory_info?.pan_number) filledCount += 1;
+    if (statutory_info?.aadhaar_number) filledCount += 1;
+    if (statutory_info?.bank_account_number && statutory_info?.ifsc_code) filledCount += 1;
+    if (Array.isArray(documents) && documents.length > 0) filledCount += 1;
+
+    const completenessScore = Math.min(100, Math.round((filledCount / totalFields) * 100));
+
+    const updatePayload = {
+      profile_completeness: completenessScore
+    };
+
+    if (phone !== undefined) updatePayload.phone = phone;
+    if (avatar_url !== undefined) updatePayload.avatar_url = avatar_url;
+    if (personal_info !== undefined) updatePayload.personal_info = JSON.stringify(personal_info);
+    if (statutory_info !== undefined) updatePayload.statutory_info = JSON.stringify(statutory_info);
+    if (emergency_contacts !== undefined) updatePayload.emergency_contacts = JSON.stringify(emergency_contacts);
+    if (documents !== undefined) updatePayload.documents_json = JSON.stringify(documents);
+
+    const updated = await updateRow('Employees', 'id', user.id, updatePayload);
+
+    return {
+      success: true,
+      message: 'Profile records and documents updated successfully.',
+      profile: {
+        ...updated,
+        personal_info: personal_info || {},
+        statutory_info: statutory_info || {},
+        emergency_contacts: emergency_contacts || {},
+        documents: documents || [],
+        profile_completeness: completenessScore
+      }
+    };
   });
 }

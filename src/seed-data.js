@@ -1,11 +1,11 @@
-import { initSheets, addRow, getRows } from './sheets.js';
+import { initDB, addRow, getRows } from './db.js';
 import bcrypt from 'bcryptjs';
 
 async function seedFullBusinessData() {
-  console.log('🚀 Starting Google Sheets Comprehensive Business Mock Data Seeding (September & August 2026)...');
-  const connected = await initSheets();
+  console.log('🚀 Starting Neon PostgreSQL Comprehensive Business Mock Data Seeding (September & August 2026)...');
+  const connected = await initDB();
   if (!connected) {
-    console.error('❌ Failed to connect to Google Sheets. Check service.json & GOOGLE_SPREADSHEET_ID.');
+    console.error('❌ Failed to connect to Neon PostgreSQL database.');
     process.exit(1);
   }
 
@@ -306,6 +306,105 @@ async function seedFullBusinessData() {
     }
   }
   console.log(`✅ Added ${levAdded} new Leave records for September 2026.`);
+
+  // 6. Support Tickets & Chat Messages
+  const existingTickets = await getRows('Support_Tickets');
+  if (existingTickets.length === 0) {
+    const sampleTickets = [
+      {
+        id: 'TKT-SAMPLE-001',
+        ticket_number: 'TKT-101',
+        category: 'Attendance / Regularization',
+        subject: 'Punch-in GPS time adjustment for Sep 2nd client visit',
+        description: 'I visited the client site in the morning on Sep 2nd and need my morning punch-in regularized to 09:15 AM.',
+        priority: 'High',
+        status: 'In-Progress',
+        creator_id: 'EMP-STAFF-01',
+        creator_name: 'VS Groups Staff',
+        assigned_to_id: 'EMP-ADMIN-01',
+        assigned_to_name: 'Vimal Raj',
+        resolution_notes: '',
+        resolved_at: '',
+        created_at: new Date(Date.now() - 3600000 * 24).toISOString(),
+        updated_at: new Date().toISOString()
+      },
+      {
+        id: 'TKT-SAMPLE-002',
+        ticket_number: 'TKT-102',
+        category: 'Payroll / Salary',
+        subject: 'August Salary Slip & Tax Deduction Breakdown Query',
+        description: 'Could management provide the official PDF copy of the August salary slip with the tax breakdown?',
+        priority: 'Medium',
+        status: 'Resolved',
+        creator_id: 'EMP-002',
+        creator_name: 'Alex Rivera',
+        assigned_to_id: 'EMP-ADMIN-01',
+        assigned_to_name: 'Vimal Raj',
+        resolution_notes: 'Salary slip PDF sent to registered email.',
+        resolved_at: new Date().toISOString(),
+        created_at: new Date(Date.now() - 3600000 * 48).toISOString(),
+        updated_at: new Date().toISOString()
+      }
+    ];
+
+    for (const t of sampleTickets) {
+      await addRow('Support_Tickets', t);
+    }
+
+    // Sample conversation messages for TKT-101
+    await addRow('Ticket_Messages', {
+      id: 'MSG-SAMPLE-001',
+      ticket_id: 'TKT-SAMPLE-001',
+      sender_id: 'EMP-STAFF-01',
+      sender_name: 'VS Groups Staff',
+      sender_role: 'employee',
+      message: 'I visited the client site in the morning on Sep 2nd and need my morning punch-in regularized to 09:15 AM.',
+      attachment_url: '',
+      is_internal_note: 'FALSE',
+      created_at: new Date(Date.now() - 3600000 * 24).toISOString()
+    });
+
+    await addRow('Ticket_Messages', {
+      id: 'MSG-SAMPLE-002',
+      ticket_id: 'TKT-SAMPLE-001',
+      sender_id: 'EMP-ADMIN-01',
+      sender_name: 'Vimal Raj',
+      sender_role: 'admin',
+      message: 'Hi VS Groups Staff, please attach your client visit sign-off note so I can approve the 09:15 AM adjustment.',
+      attachment_url: '',
+      is_internal_note: 'FALSE',
+      created_at: new Date(Date.now() - 3600000 * 20).toISOString()
+    });
+
+    await addRow('Ticket_Messages', {
+      id: 'MSG-SAMPLE-003',
+      ticket_id: 'TKT-SAMPLE-001',
+      sender_id: 'EMP-STAFF-01',
+      sender_name: 'VS Groups Staff',
+      sender_role: 'employee',
+      message: 'Client visit verification email has been forwarded to info@shazusofttechnologies.org.',
+      attachment_url: '',
+      is_internal_note: 'FALSE',
+      created_at: new Date(Date.now() - 3600000 * 18).toISOString()
+    });
+
+    console.log('✅ Seeded sample support tickets & conversation messages.');
+  }
+
+  // 7. Company Broadcasts
+  const existingBroadcasts = await getRows('Broadcasts');
+  if (existingBroadcasts.length === 0) {
+    await addRow('Broadcasts', {
+      id: 'BCAST-SAMPLE-001',
+      title: 'Company Operational Guidelines & Working Sunday Schedule Update',
+      content: 'All team members are requested to log daily tasks in the Work Log by 6:30 PM. For any issues or clarifications, use the new Issue Resolution & Chat Hub.',
+      priority: 'Normal',
+      created_by_id: 'EMP-ADMIN-01',
+      created_by_name: 'Vimal Raj',
+      created_at: new Date().toISOString()
+    });
+    console.log('✅ Seeded initial company broadcast announcement.');
+  }
 
   console.log('🎉 Full comprehensive business mock data seeding completed successfully!');
   process.exit(0);
