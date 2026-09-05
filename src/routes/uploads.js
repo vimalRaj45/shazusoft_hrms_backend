@@ -65,7 +65,7 @@ export default async function uploadRoutes(fastify, options) {
     }
   });
 
-  // GET /api/uploads/file/* - Stream file from Cloudflare R2
+  // GET /api/uploads/file/* - Serve file from Cloudflare R2 with proper inline display headers
   fastify.get('/file/*', async (request, reply) => {
     const fileKey = request.params['*'];
     if (!fileKey) {
@@ -74,11 +74,25 @@ export default async function uploadRoutes(fastify, options) {
 
     try {
       const r2Object = await getFromR2(fileKey);
-      reply.header('Content-Type', r2Object.contentType);
-      if (r2Object.contentLength) {
-        reply.header('Content-Length', r2Object.contentLength);
-      }
+
+      // Extract filename from key path for Content-Disposition
+      const filename = fileKey.split('/').pop() || 'file';
+      const isPdf = r2Object.contentType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf');
+      const isImage = r2Object.contentType?.startsWith('image/');
+
+      // Set headers that instruct browser to DISPLAY the file inline (not download)
+      reply.header('Content-Type', r2Object.contentType || (isPdf ? 'application/pdf' : 'application/octet-stream'));
+      reply.header('Content-Length', String(r2Object.contentLength || 0));
+      reply.header('Content-Disposition', `inline; filename="${encodeURIComponent(filename)}"`);
       reply.header('Cache-Control', 'public, max-age=86400');
+      reply.header('Accept-Ranges', 'bytes');
+
+      // CORS headers — allow browser to render files cross-origin
+      reply.header('Access-Control-Allow-Origin', '*');
+      reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+      reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
+
       return reply.send(r2Object.body);
     } catch (err) {
       console.error('[R2 Retrieve Error]', err);
@@ -88,6 +102,15 @@ export default async function uploadRoutes(fastify, options) {
       return reply.status(500).send({ error: 'Failed to retrieve file from storage.' });
     }
   });
+
+  // OPTIONS preflight for CORS on file serving
+  fastify.options('/file/*', async (request, reply) => {
+    reply.header('Access-Control-Allow-Origin', '*');
+    reply.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+    return reply.status(204).send();
+  });
+
 
   // DELETE /api/uploads/file/* - Delete file from Cloudflare R2
   fastify.delete('/file/*', { preHandler: [verifyAuth] }, async (request, reply) => {
