@@ -70,24 +70,17 @@ export default async function authRoutes(fastify, options) {
         employeeName: user.name
       });
 
-      console.log(`[AUTH OTP DEV] Generated OTP for ${cleanEmail}: ${otp}`);
+      console.log(`[Hostinger Mail] OTP email successfully dispatched to ${cleanEmail}`);
 
-      // DEV_TESTING_OTP: Return OTP in response for development testing. Remove in production.
       return {
         success: true,
-        message: `A 6-digit verification code has been sent to ${cleanEmail}.`,
-        dev_otp: otp // DEV_TESTING_OTP: Remove in production
+        message: `A 6-digit verification code has been sent to ${cleanEmail}. Please check your inbox.`
       };
     } catch (err) {
-      console.error('[Mail Delivery Error]', err.response?.data || err.message);
-      console.log(`[AUTH OTP DEV FALLBACK] Generated OTP for ${cleanEmail}: ${otp}`);
-
-      // DEV_TESTING_OTP: Fallback in development mode so developers can always test even if SMTP is unreachable
-      return {
-        success: true,
-        message: `Verification code generated for testing: ${otp}`,
-        dev_otp: otp // DEV_TESTING_OTP: Remove in production
-      };
+      console.error('[Hostinger Mail Delivery Error]', err.response?.data || err.message);
+      return reply.status(500).send({
+        error: 'Failed to deliver verification code to your email. Please contact company administration.'
+      });
     }
   });
 
