@@ -1,6 +1,7 @@
 import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format } from 'date-fns';
+import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
 
 export default async function tasksRoutes(fastify, options) {
   // 1. Assign a new task (Manager / Admin only)
@@ -45,6 +46,15 @@ export default async function tasksRoutes(fastify, options) {
     };
 
     const saved = await addRow('Assigned_Tasks', newTask);
+
+    // 🔔 Push notification to assigned employee
+    sendPushNotification(assigned_to_id, {
+      title: 'New Task Assigned',
+      body: `"${task_title}" on ${project_name} — due ${newTask.due_date}. Assigned by ${request.user.name}.`,
+      url: '/dashboard',
+      tag: `task-assigned-${saved.id}`
+    }).catch(() => {});
+
     return {
       message: `Task successfully assigned to ${assigned_to_name}!`,
       task: saved
@@ -112,6 +122,14 @@ export default async function tasksRoutes(fastify, options) {
           created_at: new Date().toISOString()
         });
       }
+
+      // 🔔 Push notification to admin: task completed
+      sendPushNotification('EMP-ADMIN-01', {
+        title: '✅ Task Completed',
+        body: `${existing.assigned_to_name} completed "${existing.task_title}" on ${existing.project_name}.`,
+        url: '/dashboard',
+        tag: `task-completed-${id}`
+      }).catch(() => {});
     }
 
     return {

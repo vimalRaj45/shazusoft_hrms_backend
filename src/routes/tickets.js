@@ -1,5 +1,6 @@
 import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
+import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
 
 export default async function ticketsRoutes(fastify, options) {
   // GET /api/tickets - List all support tickets / issues
@@ -125,6 +126,14 @@ export default async function ticketsRoutes(fastify, options) {
       created_at: now
     });
 
+    // 🔔 Notify admin of new support ticket
+    sendPushNotification('EMP-ADMIN-01', {
+      title: '🎫 New Support Ticket',
+      body: `${request.user.name} raised ${ticketNumber}: "${subject}" [${priority || 'Medium'} priority].`,
+      url: '/dashboard',
+      tag: `ticket-new-${ticketId}`
+    }).catch(() => {});
+
     return {
       message: `Support ticket ${ticketNumber} raised successfully.`,
       ticket: savedTicket
@@ -219,6 +228,17 @@ export default async function ticketsRoutes(fastify, options) {
 
     await updateRow('Support_Tickets', 'id', ticket.id, updatePayload);
 
+    // 🔔 Notify the other party about the new message
+    const isAdminSender = request.user.role === 'admin' || request.user.role === 'manager';
+    const notifyId = isAdminSender ? ticket.creator_id : 'EMP-ADMIN-01';
+    const notifyName = isAdminSender ? ticket.creator_name : 'Management';
+    sendPushNotification(notifyId, {
+      title: '💬 New Message on Ticket',
+      body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
+      url: '/dashboard',
+      tag: `ticket-msg-${ticket.id}`
+    }).catch(() => {});
+
     return {
       message: 'Message sent successfully.',
       data: savedMsg
@@ -310,6 +330,14 @@ export default async function ticketsRoutes(fastify, options) {
     };
 
     const saved = await addRow('Broadcasts', newBroadcast);
+
+    // 🔔 Push broadcast to ALL subscribed employees
+    broadcastPushNotification({
+      title: `📢 ${title.trim()}`,
+      body: content.trim().slice(0, 120),
+      url: '/dashboard',
+      tag: `broadcast-${saved.id}`
+    }).catch(() => {});
 
     return {
       message: 'Company announcement broadcasted successfully.',

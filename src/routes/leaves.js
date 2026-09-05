@@ -2,6 +2,7 @@ import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
+import { sendPushNotification } from '../pushService.js';
 
 // Standard Corporate Business Leave Policy Quotas (Annual)
 const LEAVE_QUOTAS = {
@@ -117,6 +118,15 @@ export default async function leaveRoutes(fastify, options) {
     };
 
     const saved = await addRow('Leaves', newLeave);
+
+    // 🔔 Notify admin of new leave application
+    sendPushNotification('EMP-ADMIN-01', {
+      title: '📅 New Leave Request',
+      body: `${request.user.name} applied for ${leave_type} (${start_date} – ${end_date}, ${totalDays} day(s)).`,
+      url: '/dashboard',
+      tag: `leave-apply-${saved.id}`
+    }).catch(() => {});
+
     return {
       message: isExceedingQuota 
         ? `Leave submitted. Note: This request exceeds your available ${leave_type} balance (${remaining} days remaining).`
@@ -161,6 +171,15 @@ export default async function leaveRoutes(fastify, options) {
     };
 
     const saved = await addRow('Permissions', newPermission);
+
+    // 🔔 Notify admin of new permission request
+    sendPushNotification('EMP-ADMIN-01', {
+      title: '⏰ New Permission Request',
+      body: `${request.user.name} requested a short permission on ${date} (${start_time} – ${end_time}, ${duration_hours} hrs).`,
+      url: '/dashboard',
+      tag: `perm-apply-${saved.id}`
+    }).catch(() => {});
+
     return {
       message: `Permission request for ${duration_hours} hrs submitted successfully! (${thisMonthPerms.length + 1} of ${MONTHLY_PERMISSION_LIMIT} monthly permissions used).`,
       permission: saved
@@ -261,6 +280,15 @@ export default async function leaveRoutes(fastify, options) {
       }
     }
 
+    // 🔔 Push notification to employee about leave decision
+    const leaveEmoji = status === 'Approved' ? '✅' : '❌';
+    sendPushNotification(existing.employee_id, {
+      title: `${leaveEmoji} Leave ${status}`,
+      body: `Your ${existing.leave_type} request (${existing.start_date} – ${existing.end_date}) has been ${status.toLowerCase()} by ${request.user.name}.`,
+      url: '/dashboard',
+      tag: `leave-status-${id}`
+    }).catch(() => {});
+
     return {
       message: `Leave request ${status.toLowerCase()} successfully.`,
       leave: updated
@@ -329,6 +357,15 @@ export default async function leaveRoutes(fastify, options) {
         console.error('Error sending permission rejection notice:', logErr);
       }
     }
+
+    // 🔔 Push notification to employee about permission decision
+    const permEmoji = status === 'Approved' ? '✅' : '❌';
+    sendPushNotification(existing.employee_id, {
+      title: `${permEmoji} Permission ${status}`,
+      body: `Your permission request on ${existing.date} (${existing.start_time} – ${existing.end_time}) has been ${status.toLowerCase()} by ${request.user.name}.`,
+      url: '/dashboard',
+      tag: `perm-status-${id}`
+    }).catch(() => {});
 
     return {
       message: `Permission request ${status.toLowerCase()} successfully.`,
