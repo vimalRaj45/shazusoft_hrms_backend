@@ -20,7 +20,8 @@ const TABLE_MAP = {
   Holidays: 'holidays',
   Support_Tickets: 'support_tickets',
   Ticket_Messages: 'ticket_messages',
-  Broadcasts: 'broadcasts'
+  Broadcasts: 'broadcasts',
+  Push_Subscriptions: 'push_subscriptions'
 };
 
 const TABLE_HEADERS = {
@@ -62,7 +63,8 @@ const TABLE_HEADERS = {
   Holidays: ['id', 'date', 'name', 'type', 'created_by', 'created_at'],
   Support_Tickets: ['id', 'ticket_number', 'category', 'subject', 'description', 'priority', 'status', 'creator_id', 'creator_name', 'assigned_to_id', 'assigned_to_name', 'resolution_notes', 'resolved_at', 'created_at', 'updated_at'],
   Ticket_Messages: ['id', 'ticket_id', 'sender_id', 'sender_name', 'sender_role', 'message', 'attachment_url', 'is_internal_note', 'created_at'],
-  Broadcasts: ['id', 'title', 'content', 'priority', 'created_by_id', 'created_by_name', 'created_at']
+  Broadcasts: ['id', 'title', 'content', 'priority', 'created_by_id', 'created_by_name', 'created_at'],
+  Push_Subscriptions: ['id', 'employee_id', 'endpoint', 'p256dh', 'auth', 'user_agent', 'created_at']
 };
 
 let pgPool = null;
@@ -82,7 +84,11 @@ const memoryDB = {
   Communications_Log: [],
   Weekly_Reports: [],
   AI_Reports: [],
-  Holidays: []
+  Holidays: [],
+  Support_Tickets: [],
+  Ticket_Messages: [],
+  Broadcasts: [],
+  Push_Subscriptions: []
 };
 
 // 15-second cache for high-speed read operations
@@ -348,6 +354,15 @@ async function initTables() {
       priority TEXT DEFAULT 'Normal',
       created_by_id VARCHAR(50) NOT NULL,
       created_by_name TEXT NOT NULL,
+      created_at TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id VARCHAR(100) PRIMARY KEY,
+      employee_id VARCHAR(50) NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
       created_at TEXT
     );`
   ];
