@@ -1,6 +1,7 @@
 import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { verifyGeofence } from '../geofence.js';
+import { runtimeSettings } from '../config.js';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
 import {
   getTodayDateStr,
@@ -108,9 +109,12 @@ export default async function attendanceRoutes(fastify, options) {
       });
     }
 
-    // Determine if late (after 09:45 AM in business timezone)
+    // Determine if late using dynamic office shift settings (default 09:45 AM in business timezone)
     const { hour: busHour, minute: busMinute } = getBusinessHoursAndMinutes();
-    const isLate = busHour > 9 || (busHour === 9 && busMinute > 45);
+    const [graceHour, graceMinute] = (runtimeSettings.officeLateGraceTime || '09:45')
+      .split(':')
+      .map(n => parseInt(n, 10));
+    const isLate = busHour > graceHour || (busHour === graceHour && busMinute > graceMinute);
     const status = isLate ? 'Late' : 'Present';
 
     const newRecord = {

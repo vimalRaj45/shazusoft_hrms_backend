@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from './src/config.js';
-import { deleteRow } from './src/db.js';
+import { initDB, getRows, addRow, deleteRow } from './src/db.js';
 
 const BASE_URL = `http://localhost:${config.port || 5000}`;
 
@@ -105,6 +105,100 @@ async function runAllTests() {
   console.log(`${colors.bright}${colors.magenta}  SHAZUSOFT HRMS — COMPREHENSIVE API TEST SUITE   ${colors.reset}`);
   console.log(`${colors.bright}${colors.magenta}  Database: Neon PostgreSQL | Server: Fastify v4   ${colors.reset}`);
   console.log(`${colors.bright}${colors.magenta}====================================================${colors.reset}\n`);
+
+  // Initialize DB connection so database queries and seeds execute directly on Neon PostgreSQL
+  try {
+    await initDB();
+  } catch (err) {
+    console.warn('Direct DB initialization warning:', err.message);
+  }
+
+  // Ensure test accounts exist in server memory and PostgreSQL database
+  try {
+    const empRes = await fetch(`${BASE_URL}/api/admin/employees`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const { employees = [] } = await empRes.json();
+
+    if (!employees.find(e => e.id === 'EMP-STAFF-01')) {
+      await fetch(`${BASE_URL}/api/admin/employees`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          id: 'EMP-STAFF-01',
+          name: 'VS Groups Staff',
+          email: 'staff.demo@shazusofttechnologies.org',
+          role: 'employee',
+          department: 'Engineering',
+          designation: 'Staff Software Engineer',
+          work_mode: 'office'
+        })
+      });
+    }
+
+    if (!employees.find(e => e.id === 'EMP-WFH-01')) {
+      await fetch(`${BASE_URL}/api/admin/employees`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          id: 'EMP-WFH-01',
+          name: 'Remote Developer',
+          email: 'wfh.demo@shazusofttechnologies.org',
+          role: 'employee',
+          department: 'Engineering',
+          designation: 'Remote Frontend Developer',
+          work_mode: 'wfh'
+        })
+      });
+    }
+  } catch (err) {
+    console.warn('API Account Pre-Seeding warning:', err.message);
+  }
+
+  // Ensure EMP-STAFF-01 has baseline attendance and task log for monthly report tests
+  try {
+    const attendance = await getRows('Attendance');
+    if (!attendance.find(a => a.employee_id === 'EMP-STAFF-01')) {
+      await addRow('Attendance', {
+        id: `ATT-STAFF-${Date.now()}`,
+        date: '2026-09-01',
+        employee_id: 'EMP-STAFF-01',
+        employee_name: 'VS Groups Staff',
+        status: 'Present',
+        login_time: '09:20:00',
+        logout_time: '18:30:00',
+        total_hours: '9.1',
+        net_hours: '8.5',
+        in_geofence: 'TRUE',
+        notes: 'Automated test suite baseline'
+      });
+    }
+
+    const workLogs = await getRows('WorkDone');
+    if (!workLogs.find(w => w.employee_id === 'EMP-STAFF-01')) {
+      await addRow('WorkDone', {
+        id: `WORK-STAFF-${Date.now()}`,
+        date: '2026-09-01',
+        employee_id: 'EMP-STAFF-01',
+        employee_name: 'VS Groups Staff',
+        project_name: 'HRMS 2026 Core',
+        task_title: 'Automated Verification Task',
+        description: 'Baseline task deliverable for timesheet testing',
+        status: 'Completed',
+        estimated_hours: '8.0',
+        actual_hours: '8.5',
+        created_at: new Date().toISOString()
+      });
+    }
+  } catch (err) {
+    console.warn('Baseline timesheet data seeding warning:', err.message);
+  }
 
   // ─────────────────────────────────────────────────────────────
   // 1. HEALTH & SYSTEM DIAGNOSTICS
@@ -694,6 +788,37 @@ async function runAllTests() {
     expect(res.status).toBe(200);
   });
 
+  // Ensure EMP-STAFF-01 has attendance and workdone logged
+  await fetch(`${BASE_URL}/api/attendance/punch-in`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${staffToken}`
+    },
+    body: JSON.stringify({
+      latitude: config.officeLatitude || 11.6569101,
+      longitude: config.officeLongitude || 78.1635979
+    })
+  }).catch(() => {});
+
+  await fetch(`${BASE_URL}/api/workdone`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${staffToken}`
+    },
+    body: JSON.stringify({
+      date: '2026-09-01',
+      project_name: 'Core System',
+      task_title: 'Automated Test Verification',
+      description: 'Staff work deliverable for monthly reports test',
+      estimated_hours: '4.0',
+      actual_hours: '4.0',
+      status: 'Completed',
+      remarks: 'Verified'
+    })
+  }).catch(() => {});
+
   await assertTest('GET /api/attendance/staff-monthly-history (Staff timesheet with verified attendance metrics) -> 200', async () => {
     const res = await fetch(`${BASE_URL}/api/attendance/staff-monthly-history?employee_id=EMP-STAFF-01&month=2026-09`, {
       headers: { Authorization: `Bearer ${adminToken}` }
@@ -909,6 +1034,150 @@ async function runAllTests() {
     expect(body.isMonthlyPolicy).toBe(true);
     expect(body.balances['Casual Leave'].totalQuota).toBe(1.5);
     expect(body.permissionPolicy.monthlyLimit).toBe(3);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 11. OFFICE TIMINGS & WORKING HOURS CONFIGURATION
+  // ─────────────────────────────────────────────────────────────
+  console.log(`\n${colors.bright}${colors.yellow}11. OFFICE TIMINGS & WORKING HOURS CONFIGURATION${colors.reset}`);
+
+  await assertTest('GET /api/admin/office-timings (Staff Token Restricted) -> 403 Forbidden', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/office-timings`, {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    expect(res.status).toBe(403);
+  });
+
+  await assertTest('GET /api/admin/office-timings (Admin Fetches Shift Timings) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/office-timings`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.timings).toBeTruthy();
+    expect(typeof body.timings.opening_time).toBe('string');
+    expect(typeof body.timings.late_grace_time).toBe('string');
+  });
+
+  await assertTest('PUT /api/admin/office-timings (Edge Case: Invalid 24h Time Format) -> 400', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/office-timings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ opening_time: '25:99' })
+    });
+    expect(res.status).toBe(400);
+  });
+
+  await assertTest('PUT /api/admin/office-timings (Admin Updates Office Hours & Grace Cutoff) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/admin/office-timings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        opening_time: '09:30',
+        closing_time: '18:30',
+        late_grace_time: '09:45',
+        half_day_hours: 4.5,
+        full_day_hours: 8.5
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.timings.opening_time).toBe('09:30');
+    expect(body.timings.late_grace_time).toBe('09:45');
+    expect(body.timings.full_day_hours).toBe(8.5);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 12. WEBPUSH NOTIFICATIONS & SUBSCRIPTIONS
+  // ─────────────────────────────────────────────────────────────
+  console.log(`\n${colors.bright}${colors.yellow}12. WEBPUSH NOTIFICATIONS & SUBSCRIPTIONS${colors.reset}`);
+
+  await assertTest('GET /api/notifications/vapid-public-key -> 200 with Public VAPID Key', async () => {
+    const res = await fetch(`${BASE_URL}/api/notifications/vapid-public-key`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.publicKey).toBeTruthy();
+    expect(typeof body.publicKey).toBe('string');
+  });
+
+  await assertTest('POST /api/notifications/subscribe (Edge Case: Missing Keys / Endpoint) -> 400', async () => {
+    const res = await fetch(`${BASE_URL}/api/notifications/subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ subscription: {} })
+    });
+    expect(res.status).toBe(400);
+  });
+
+  const testPushEndpoint = `https://fcm.googleapis.com/fcm/send/test-suite-${Date.now()}`;
+
+  await assertTest('POST /api/notifications/subscribe (Register Valid Browser Subscription) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/notifications/subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        subscription: {
+          endpoint: testPushEndpoint,
+          keys: {
+            p256dh: 'BNcRdreALRF8FsEJKZVoVZFsQHH21k0BE3UZ5Y',
+            auth: 'tBHItDaA'
+          }
+        },
+        userAgent: 'Automated Test Suite Engine'
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  await assertTest('POST /api/notifications/subscribe (Idempotent Re-subscription with Same Endpoint) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/notifications/subscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        subscription: {
+          endpoint: testPushEndpoint,
+          keys: {
+            p256dh: 'BNcRdreALRF8FsEJKZVoVZFsQHH21k0BE3UZ5Y',
+            auth: 'tBHItDaA'
+          }
+        },
+        userAgent: 'Automated Test Suite Engine (Session Refresh)'
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  await assertTest('POST /api/notifications/unsubscribe (Opt Out / Remove Subscription) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/notifications/unsubscribe`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ endpoint: testPushEndpoint })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
   });
 
   // ─────────────────────────────────────────────────────────────

@@ -40,17 +40,21 @@ export async function saveSubscription(employeeId, subscription, userAgent = '')
   const p256dh = keys.p256dh;
   const auth = keys.auth;
 
-  // Remove any stale record for this endpoint first (safe no-op if none exists)
-  await deleteRow('Push_Subscriptions', 'endpoint', endpoint).catch(() => {});
+  // Check if a subscription already exists for this endpoint
+  const allSubs = await getRows('Push_Subscriptions');
+  const existing = allSubs.find(s => s.endpoint === endpoint);
+
+  // If already registered with an ID, reuse that ID so addRow ON CONFLICT (id) smoothly updates it
+  const subId = existing?.id || `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   const newSub = {
-    id: `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: subId,
     employee_id: employeeId,
     endpoint,
     p256dh,
     auth,
     user_agent: userAgent,
-    created_at: new Date().toISOString()
+    created_at: existing?.created_at || new Date().toISOString()
   };
 
   await addRow('Push_Subscriptions', newSub);

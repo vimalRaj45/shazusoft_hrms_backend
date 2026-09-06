@@ -23,8 +23,13 @@ export default async function notificationsRoutes(fastify, options) {
       return reply.status(400).send({ error: 'Valid PushSubscription object is required.' });
     }
 
+    const userId = request.user?.id;
+    if (!userId) {
+      return reply.status(401).send({ error: 'User identity could not be verified from session token.' });
+    }
+
     try {
-      await saveSubscription(request.user.id, subscription, userAgent || request.headers['user-agent'] || '');
+      await saveSubscription(userId, subscription, userAgent || request.headers['user-agent'] || '');
       return {
         success: true,
         message: 'Push notification subscription registered successfully.'

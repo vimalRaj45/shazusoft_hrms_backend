@@ -1,0 +1,9 @@
+{
+  "opening_time": "09:30",
+  "closing_time": "18:30",
+  "late_grace_time": "09:45",
+  "half_day_hours": 4.5,
+  "full_day_hours": 8.5,
+  "updated_at": "2026-09-06T06:52:12.052Z",
+  "updated_by": "Vimal Raj"
+}

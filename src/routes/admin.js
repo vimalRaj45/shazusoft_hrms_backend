@@ -1,6 +1,6 @@
 import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updateLeavePolicy } from '../db.js';
 import { verifyAdmin, hashPassword } from '../auth.js';
-import { runtimeSettings } from '../config.js';
+import { runtimeSettings, saveOfficeTimings } from '../config.js';
 import { format } from 'date-fns';
 import { formatTime12h, getTodayDateStr } from '../utils/dateTime.js';
 import { sendInvitationEmail } from '../mailer.js';
@@ -98,21 +98,27 @@ export default async function adminRoutes(fastify, options) {
       return reply.status(400).send({ error: 'An employee with this email already exists.' });
     }
 
-    // Robust Collision-Free ID Generation
-    let maxNum = 0;
-    rows.forEach(r => {
-      const match = r.id?.match(/^EMP-(?:STAFF-)?(\d+)$/i);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (num > maxNum) maxNum = num;
-      }
-    });
+    // Robust Collision-Free ID Generation (uses provided unique ID if supplied)
+    let candidateId = (request.body?.id && !rows.some(r => r.id?.toLowerCase() === request.body.id.trim().toLowerCase()))
+      ? request.body.id.trim()
+      : null;
 
-    let nextNum = Math.max(maxNum + 1, rows.length + 1);
-    let candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
-    while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
-      nextNum++;
+    if (!candidateId) {
+      let maxNum = 0;
+      rows.forEach(r => {
+        const match = r.id?.match(/^EMP-(?:STAFF-)?(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      });
+
+      let nextNum = Math.max(maxNum + 1, rows.length + 1);
       candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
+      while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
+        nextNum++;
+        candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
+      }
     }
 
     const newEmp = {
@@ -432,6 +438,40 @@ export default async function adminRoutes(fastify, options) {
     return {
       message: 'Monthly leave policy updated successfully.',
       policy: updated
+    };
+  });
+
+  // GET /api/admin/office-timings — Get dynamic office shift opening, closing & grace times
+  fastify.get('/office-timings', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    return {
+      timings: {
+        opening_time: runtimeSettings.officeOpeningTime || '09:30',
+        closing_time: runtimeSettings.officeClosingTime || '18:30',
+        late_grace_time: runtimeSettings.officeLateGraceTime || '09:45',
+        half_day_hours: runtimeSettings.halfDayHours || 4.5,
+        full_day_hours: runtimeSettings.fullDayHours || 8.5
+      }
+    };
+  });
+
+  // PUT /api/admin/office-timings — Update dynamic office shift opening, closing & grace times
+  fastify.put('/office-timings', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { opening_time, closing_time, late_grace_time } = request.body || {};
+
+    if (opening_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(opening_time)) {
+      return reply.status(400).send({ error: 'Opening time must be in HH:mm format (e.g. 09:30).' });
+    }
+    if (closing_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(closing_time)) {
+      return reply.status(400).send({ error: 'Closing time must be in HH:mm format (e.g. 18:30).' });
+    }
+    if (late_grace_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(late_grace_time)) {
+      return reply.status(400).send({ error: 'Late grace cutoff must be in HH:mm format (e.g. 09:45).' });
+    }
+
+    const updated = saveOfficeTimings(request.body, request.user.name);
+    return {
+      message: 'Office opening, closing & late grace timings updated successfully.',
+      timings: updated
     };
   });
 
