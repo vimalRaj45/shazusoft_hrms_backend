@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node test-suite.js"
+    "test": "node test-suite.js",
+    "truncate": "node truncate.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",
