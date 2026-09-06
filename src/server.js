@@ -22,6 +22,7 @@ import searchRoutes from './routes/search.js';
 import ticketsRoutes from './routes/tickets.js';
 import uploadRoutes from './routes/uploads.js';
 import notificationsRoutes from './routes/notifications.js';
+import payrollRoutes from './routes/payroll.js';
 
 async function buildServer() {
   const fastify = Fastify({
@@ -64,6 +65,7 @@ async function buildServer() {
   await fastify.register(ticketsRoutes, { prefix: '/api/tickets' });
   await fastify.register(uploadRoutes, { prefix: '/api/uploads' });
   await fastify.register(notificationsRoutes, { prefix: '/api/notifications' });
+  await fastify.register(payrollRoutes, { prefix: '/api/payroll' });
 
   return fastify;
 }

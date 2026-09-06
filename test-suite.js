@@ -92,6 +92,11 @@ function expect(actual) {
         throw new Error(`Expected truthy value but got ${JSON.stringify(actual)}`);
       }
     },
+    toBeDefined() {
+      if (actual === undefined || actual === null) {
+        throw new Error(`Expected defined value but got ${JSON.stringify(actual)}`);
+      }
+    },
     toBeOneOf(expectedArray) {
       if (!expectedArray.includes(actual)) {
         throw new Error(`Expected ${actual} to be one of ${JSON.stringify(expectedArray)}`);
@@ -1216,6 +1221,164 @@ async function runAllTests() {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.success).toBe(true);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 13. AUTOMATED PAYROLL & WORKING SUNDAY TEST SUITE
+  // ─────────────────────────────────────────────────────────────
+  console.log(`\n${colors.bright}${colors.blue}--- SUITE 13: AUTOMATED PAYROLL & WORKING SUNDAY SUITE ---${colors.reset}`);
+
+  await assertTest('Unit Test: calculateMonthWorkingDays includes "Working Sunday" & excludes normal Sundays', async () => {
+    const { calculateMonthWorkingDays } = await import('./src/routes/payroll.js');
+    // Test September 2026: 30 days. Sundays are Sept 6, 13, 20, 27 (4 Sundays).
+    // Without holidays: 30 - 4 = 26 working days.
+    const baseline = calculateMonthWorkingDays('2026-09', []);
+    expect(baseline.daysInMonth).toBe(30);
+    expect(baseline.sundaysOffCount).toBe(4);
+    expect(baseline.totalWorkingDays).toBe(26);
+
+    // Now test with 1 Working Sunday (Sept 13) and 1 Public Holiday (Sept 15)
+    const holidays = [
+      { date: '2026-09-13', name: 'Sprint Milestone Working Sunday', type: 'Working Sunday' },
+      { date: '2026-09-15', name: 'Engineers Day Off', type: 'Public Holiday' }
+    ];
+    const withWorkingSunday = calculateMonthWorkingDays('2026-09', holidays);
+    expect(withWorkingSunday.workingSundaysCount).toBe(1);
+    expect(withWorkingSunday.holidaysCount).toBe(1);
+    expect(withWorkingSunday.sundaysOffCount).toBe(3);
+    // 25 regular working days + 1 working Sunday = 26 total working days
+    expect(withWorkingSunday.totalWorkingDays).toBe(26);
+  });
+
+  await assertTest('GET /api/payroll/working-days-preview (Auth) -> 200 with breakdown', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/working-days-preview?month=2026-09`, {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.yearMonth).toBe('2026-09');
+    expect(typeof body.totalWorkingDays).toBe('number');
+    expect(Array.isArray(body.daysDetail)).toBe(true);
+  });
+
+  await assertTest('GET /api/payroll/salary-structures (Staff Access Blocked) -> 403', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/salary-structures`, {
+      headers: { Authorization: `Bearer ${staffToken}` }
+    });
+    expect(res.status).toBe(403);
+  });
+
+  await assertTest('PUT /api/payroll/salary-structures/:employee_id (Admin Update Base Salary) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/salary-structures/EMP-ADMIN-01`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        monthly_salary: 45000,
+        bank_name: 'HDFC Bank',
+        account_number: '50100234567890',
+        ifsc_code: 'HDFC0001234',
+        upi_id: 'admin@okaxis',
+        pan_number: 'ABCDE1234F'
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.salary_structure.monthly_salary).toBe(45000);
+  });
+
+  await assertTest('GET /api/payroll/salary-structures (Admin Read All) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/salary-structures`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.salary_structures)).toBe(true);
+    const adminStruct = body.salary_structures.find(s => s.employee_id === 'EMP-ADMIN-01');
+    expect(adminStruct).toBeDefined();
+    expect(adminStruct.monthly_salary).toBe(45000);
+  });
+
+  await assertTest('POST /api/payroll/calculate-month (Admin Preview Month Calculation) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/calculate-month`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ month: '2026-09' })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.workingDaysMeta).toBeDefined();
+    expect(Array.isArray(body.records)).toBe(true);
+    const rec = body.records.find(r => r.employee_id === 'EMP-ADMIN-01');
+    if (rec) {
+      expect(rec.monthly_salary).toBe(45000);
+      expect(typeof rec.daily_rate).toBe('number');
+      expect(typeof rec.net_payable).toBe('number');
+    }
+  });
+
+  await assertTest('POST /api/payroll/generate-month (Admin Commit / Publish Month Payroll) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/generate-month`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({ month: '2026-09' })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.records)).toBe(true);
+  });
+
+  await assertTest('GET /api/payroll/month-records?month=2026-09 (Admin Fetch Month Register) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/month-records?month=2026-09`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.month).toBe('2026-09');
+    expect(Array.isArray(body.records)).toBe(true);
+  });
+
+  let payrollRecordId = 'PAY-2026-09-EMP-ADMIN-01';
+  await assertTest('PATCH /api/payroll/records/:id/status (Admin Mark Paid) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/records/${payrollRecordId}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        status: 'Paid',
+        payment_mode: 'NEFT/UPI',
+        payment_reference: 'UPI/20260906/987654',
+        remarks: 'Salary processed on-time'
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.record.status).toBe('Paid');
+  });
+
+  await assertTest('GET /api/payroll/my-payslips (Staff / Admin Personal Payslips) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/payroll/my-payslips`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.payslips)).toBe(true);
+    const myRec = body.payslips.find(p => p.payroll_month === '2026-09');
+    expect(myRec).toBeDefined();
+    expect(myRec.status).toBe('Paid');
   });
 
   // ─────────────────────────────────────────────────────────────

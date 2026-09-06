@@ -22,13 +22,26 @@ const TABLE_MAP = {
   Ticket_Messages: 'ticket_messages',
   Broadcasts: 'broadcasts',
   Push_Subscriptions: 'push_subscriptions',
-  Leave_Policies: 'leave_policies'
+  Leave_Policies: 'leave_policies',
+  Salary_Structures: 'salary_structures',
+  Monthly_Payrolls: 'monthly_payrolls'
 };
 
 const TABLE_HEADERS = {
   Leave_Policies: [
     'id', 'policy_key', 'monthly_casual_leave', 'monthly_sick_leave', 'monthly_paid_leave',
     'monthly_permission_limit', 'max_permission_hours', 'updated_at', 'updated_by'
+  ],
+  Salary_Structures: [
+    'id', 'employee_id', 'employee_name', 'department', 'designation',
+    'monthly_salary', 'bank_name', 'account_number', 'ifsc_code', 'upi_id', 'pan_number',
+    'updated_at', 'updated_by'
+  ],
+  Monthly_Payrolls: [
+    'id', 'payroll_month', 'employee_id', 'employee_name', 'department', 'designation',
+    'monthly_salary', 'daily_rate', 'total_working_days', 'present_days', 'paid_leaves',
+    'lop_days', 'lop_deduction', 'net_payable', 'status', 'payment_mode', 'payment_date',
+    'payment_reference', 'remarks', 'generated_at', 'generated_by', 'paid_at', 'paid_by'
   ],
   Employees: [
     'id', 'name', 'email', 'password_hash', 'role', 'department', 'designation', 'work_mode', 'status',
@@ -94,7 +107,9 @@ const memoryDB = {
   Ticket_Messages: [],
   Broadcasts: [],
   Push_Subscriptions: [],
-  Leave_Policies: []
+  Leave_Policies: [],
+  Salary_Structures: [],
+  Monthly_Payrolls: []
 };
 
 // 15-second cache for high-speed read operations
@@ -384,6 +399,47 @@ async function initTables() {
       max_permission_hours INT DEFAULT 2,
       updated_at TEXT,
       updated_by TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS salary_structures (
+      id VARCHAR(100) PRIMARY KEY,
+      employee_id VARCHAR(50) UNIQUE NOT NULL,
+      employee_name TEXT,
+      department TEXT,
+      designation TEXT,
+      monthly_salary NUMERIC DEFAULT 0,
+      bank_name TEXT,
+      account_number TEXT,
+      ifsc_code TEXT,
+      upi_id TEXT,
+      pan_number TEXT,
+      updated_at TEXT,
+      updated_by TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS monthly_payrolls (
+      id VARCHAR(100) PRIMARY KEY,
+      payroll_month VARCHAR(7) NOT NULL,
+      employee_id VARCHAR(50) NOT NULL,
+      employee_name TEXT,
+      department TEXT,
+      designation TEXT,
+      monthly_salary NUMERIC DEFAULT 0,
+      daily_rate NUMERIC DEFAULT 0,
+      total_working_days NUMERIC DEFAULT 0,
+      present_days NUMERIC DEFAULT 0,
+      paid_leaves NUMERIC DEFAULT 0,
+      lop_days NUMERIC DEFAULT 0,
+      lop_deduction NUMERIC DEFAULT 0,
+      net_payable NUMERIC DEFAULT 0,
+      status VARCHAR(20) DEFAULT 'Pending',
+      payment_mode TEXT,
+      payment_date TEXT,
+      payment_reference TEXT,
+      remarks TEXT,
+      generated_at TEXT,
+      generated_by TEXT,
+      paid_at TEXT,
+      paid_by TEXT,
+      UNIQUE(payroll_month, employee_id)
     );`
   ];
 
