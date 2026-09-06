@@ -72,19 +72,19 @@ export async function generateMonthlyAIReport({ monthYear, targetEmployee, atten
   if (mistral) {
     try {
       const prompt = `
-You are an expert HR Performance and Operations Analytics AI.
-Analyze the following monthly attendance, break, and daily work completion data for ${monthYear}:
+You are an executive HR and Operations Analytics Director writing an official leadership review for ${monthYear}.
+Analyze the following monthly attendance, punctuality, and task delivery metrics:
 
 DATA CONTEXT:
 ${JSON.stringify(promptContext, null, 2)}
 
-Provide a comprehensive and highly professional management report in JSON format with the following keys:
-1. "summary": A well-written 3-4 paragraph markdown overview discussing attendance stability, task throughput, efficiency, and time estimation accuracy.
+Provide a thoughtful, natural, and humanized executive management report in JSON format with the following keys:
+1. "summary": A polished, 2-3 paragraph executive review written in natural, fluent corporate English. Discuss attendance discipline, deliverable velocity, team workload balance, and estimation accuracy. Do NOT use raw markdown headers (no "###"), do NOT use asterisks for bolding (no "**"), and avoid robotic templated phrases.
 2. "productivityScore": Integer from 0 to 100 based on completion rate, hours worked, and variance.
 3. "attendanceScore": Integer from 0 to 100 based on punctuality and presence.
-4. "keyInsights": Array of 4-6 concise actionable bullet points for management (e.g. workload balancing, estimated vs actual hours discrepancy, top strengths).
+4. "keyInsights": Array of 3-5 concise, actionable observations for senior leadership.
 
-Respond ONLY with valid JSON (no surrounding markdown code fences if possible, or clean standard JSON).
+Respond ONLY with valid JSON.
 `;
 
       const response = await mistral.chat.complete({
@@ -114,23 +114,23 @@ Respond ONLY with valid JSON (no surrounding markdown code fences if possible, o
     }
   }
 
-  // Smart Analytical Fallback Generator (when MISTRAL_API_KEY is not yet added)
+  // Smart Humanized Analytical Fallback Generator
   const timeDiff = totalActualHours - totalEstimatedHours;
-  const timeVarianceText = timeDiff > 0 
-    ? `Tasks required ${timeDiff.toFixed(1)} more hours than originally estimated, pointing to scope changes or underestimation.`
-    : `Tasks were completed within or under estimated timelines (${Math.abs(timeDiff).toFixed(1)} hrs saved).`;
+  const timeVarianceHuman = timeDiff > 0 
+    ? `Tasks required ${timeDiff.toFixed(1)} additional hours over initial estimates, primarily driven by project scope adjustments.`
+    : `Delivery remained on target, with task execution completing within scheduled parameters (${Math.abs(timeDiff).toFixed(1)} hours saved).`;
 
-  const productivityScore = Math.min(100, Math.max(40, Math.round((taskCompletionRate * 0.6) + (Math.min(avgDailyHours / 8, 1) * 40))));
-  const attendanceScore = Math.min(100, Math.max(30, attendanceRate));
+  const daysLabel = totalDaysLogged === 1 ? '1 working day' : `${totalDaysLogged} working days`;
+  const presentLabel = presentDays === 1 ? '1 on-time session' : `${presentDays} on-time sessions`;
+  const lateLabel = lateDays === 1 ? '1 late entry' : `${lateDays} late entries`;
+  const completedLabel = completedTasks === 1 ? '1 task was' : `${completedTasks} tasks were`;
+  const totalTasksLabel = totalTasks === 1 ? '1 task' : `${totalTasks} tasks`;
 
-  const fallbackSummary = `### Monthly Performance Analysis for ${monthYear}
-**Target Scope:** ${targetEmployee ? `${targetEmployee.name} (${targetEmployee.id})` : 'Organization-Wide'}
+  const humanizedSummary = `During ${monthYear}, scheduled operations progressed steadily with ${daysLabel} recorded across active shifts, averaging ${avgDailyHours} productive hours per day. Attendance reliability reached ${attendanceRate}%, with ${presentLabel}, ${lateLabel}, and ${halfDays} half-day sessions logged.
 
-During ${monthYear}, a total of **${totalDaysLogged} working days** were logged with an average of **${avgDailyHours} effective hours per day**. Attendance stood at **${attendanceRate}%**, with ${presentDays} on-time days, ${lateDays} late entries, and ${halfDays} half-day sessions.
+On deliverable execution, team members managed ${totalTasksLabel} across active project pipelines. ${completedLabel} successfully completed (${taskCompletionRate}% completion rate), with ${inProgressTasks} currently in progress and ${pendingTasks} pending review.
 
-On the task execution side, team members logged **${totalTasks} total tasks** across active projects. Out of these, **${completedTasks} tasks were successfully completed** (${taskCompletionRate}% completion rate), **${inProgressTasks} remain in progress**, and **${pendingTasks} are pending or blocked**.
-
-${timeVarianceText} Total actual effort recorded was **${totalActualHours.toFixed(1)} hours** against **${totalEstimatedHours.toFixed(1)} estimated hours**. Overall workload management shows stable engagement with clear opportunities for optimization.`;
+${timeVarianceHuman} Total effort recorded was ${totalActualHours.toFixed(1)} hours against an estimated commitment of ${totalEstimatedHours.toFixed(1)} hours. Overall workload management shows stable engagement with clear opportunities for workflow optimization.`;
 
   const fallbackInsights = [
     `Task completion rate reached ${taskCompletionRate}% with ${completedTasks} completed out of ${totalTasks} logged items.`,
@@ -149,9 +149,9 @@ ${timeVarianceText} Total actual effort recorded was **${totalActualHours.toFixe
     attendanceRate: `${attendanceRate}%`,
     taskCompletionRate: `${taskCompletionRate}%`,
     avgDailyHours: `${avgDailyHours} hrs`,
-    productivityScore,
-    attendanceScore,
-    summary: fallbackSummary,
+    productivityScore: Math.min(100, Math.max(40, Math.round((taskCompletionRate * 0.6) + (Math.min(avgDailyHours / 8, 1) * 40)))),
+    attendanceScore: Math.min(100, Math.max(30, attendanceRate)),
+    summary: humanizedSummary,
     keyInsights: fallbackInsights,
     generatedAt: new Date().toISOString()
   };

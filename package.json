@@ -1,7 +1,7 @@
 {
   "name": "shazusoft-hrms-backend",
   "version": "1.0.0",
-  "description": "Office Attendance & WorkDone Management Backend with Fastify, Google Sheets, Geofencing, and Mistral AI",
+  "description": "Office Attendance & WorkDone Management Backend with Fastify, Neon PostgreSQL, Cloudflare R2, Geofencing, and Mistral AI",
   "main": "src/server.js",
   "type": "module",
   "scripts": {

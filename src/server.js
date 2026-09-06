@@ -45,6 +45,7 @@ async function buildServer() {
       status: 'ok',
       service: 'Shazusoft HRMS Backend API',
       timestamp: new Date().toISOString(),
+      databaseStatus: getStatus(),
       sheetsStatus: getStatus()
     };
   });

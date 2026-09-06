@@ -21,7 +21,7 @@ export default async function searchRoutes(fastify, options) {
       };
     }
 
-    // Parallel fetch across Google Sheets tabs
+    // Parallel fetch across database tables
     const [
       employees,
       assignedTasks,

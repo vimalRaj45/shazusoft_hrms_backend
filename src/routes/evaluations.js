@@ -144,7 +144,7 @@ export default async function evaluationRoutes(fastify, options) {
 
     const saved = await addRow('Weekly_Reports', newWeeklyReport);
     return {
-      message: 'Weekly Check-in report submitted successfully to Google Sheets!',
+      message: 'Weekly Check-in report submitted successfully!',
       report: saved
     };
   });
@@ -233,7 +233,7 @@ export default async function evaluationRoutes(fastify, options) {
 
     const saved = await addRow('Self_Evaluations', evaluationRecord);
     return {
-      message: 'Monthly Self-Evaluation Performance Appraisal submitted successfully to Google Sheets!',
+      message: 'Monthly Self-Evaluation Performance Appraisal submitted successfully!',
       evaluation: {
         ...saved,
         targets_tasks,
@@ -298,7 +298,7 @@ export default async function evaluationRoutes(fastify, options) {
     }
 
     return {
-      message: 'Manager performance review recorded successfully in Google Sheets!',
+      message: 'Manager performance review recorded successfully!',
       evaluation: updated
     };
   });
