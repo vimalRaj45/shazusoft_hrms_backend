@@ -62,7 +62,9 @@ export default async function communicationsRoutes(fastify, options) {
       type: 'attendance',
       targetTab: 'admin-communications',
       targetUrl: '/?tab=admin-communications',
-      metadata: { regularizationId: saved.id, employeeId: request.user.id }
+      metadata: { regularizationId: saved.id, employeeId: request.user.id },
+      senderRole: request.user?.role || 'employee',
+      isCrud: true
     }).catch(() => {});
 
     // Audit log
@@ -195,7 +197,9 @@ export default async function communicationsRoutes(fastify, options) {
       type: 'attendance',
       targetTab: 'communications',
       targetUrl: '/?tab=communications',
-      metadata: { regularizationId: target.id, action }
+      metadata: { regularizationId: target.id, action },
+      senderRole: request.user?.role || 'admin',
+      isCrud: true
     }).catch(() => {});
 
     // Log resolution to Communications

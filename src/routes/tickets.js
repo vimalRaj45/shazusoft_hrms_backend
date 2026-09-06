@@ -91,7 +91,9 @@ async function processMentions({ content, explicitMentions, ticket, sender, excl
         type: 'ticket',
         targetTab: 'chat-hub',
         targetUrl: '/?tab=chat-hub',
-        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number },
+        senderRole: sender.role || 'employee',
+        isCrud: false
       }).catch(() => {});
 
       await addRow('Communications_Log', {
@@ -245,7 +247,9 @@ export default async function ticketsRoutes(fastify, options) {
       type: 'ticket',
       targetTab: 'chat-hub',
       targetUrl: '/?tab=chat-hub',
-      metadata: { ticketId, ticketNumber, priority }
+      metadata: { ticketId, ticketNumber, priority },
+      senderRole: request.user?.role || 'employee',
+      isCrud: true
     }).catch(() => {});
 
     // Detect and notify any @mentioned staff members in initial ticket description & subject
@@ -406,7 +410,9 @@ export default async function ticketsRoutes(fastify, options) {
         type: 'ticket',
         targetTab: 'chat-hub',
         targetUrl: '/?tab=chat-hub',
-        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number },
+        senderRole: request.user?.role || 'admin',
+        isCrud: true
       }).catch(() => {});
       excludedNotify.push(ticket.creator_id);
     } else if (request.user.id === ticket.creator_id) {
@@ -417,7 +423,9 @@ export default async function ticketsRoutes(fastify, options) {
         type: 'ticket',
         targetTab: 'chat-hub',
         targetUrl: '/?tab=chat-hub',
-        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number },
+        senderRole: request.user?.role || 'employee',
+        isCrud: true
       }).catch(() => {});
       excludedNotify.push('EMP-ADMIN-01');
     } else {
@@ -429,7 +437,9 @@ export default async function ticketsRoutes(fastify, options) {
         type: 'ticket',
         targetTab: 'chat-hub',
         targetUrl: '/?tab=chat-hub',
-        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number },
+        senderRole: request.user?.role || 'employee',
+        isCrud: true
       }).catch(() => {});
       dispatchNotification({
         recipientId: 'EMP-ADMIN-01',
@@ -438,7 +448,9 @@ export default async function ticketsRoutes(fastify, options) {
         type: 'ticket',
         targetTab: 'chat-hub',
         targetUrl: '/?tab=chat-hub',
-        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number },
+        senderRole: request.user?.role || 'employee',
+        isCrud: true
       }).catch(() => {});
       excludedNotify.push(ticket.creator_id, 'EMP-ADMIN-01');
     }
@@ -525,7 +537,9 @@ export default async function ticketsRoutes(fastify, options) {
         type: 'ticket',
         targetTab: 'chat-hub',
         targetUrl: '/?tab=chat-hub',
-        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number, status }
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number, status },
+        senderRole: request.user?.role || 'admin',
+        isCrud: true
       }).catch(() => {});
     }
 
@@ -571,7 +585,9 @@ export default async function ticketsRoutes(fastify, options) {
       targetTab: 'announcements',
       targetUrl: '/?tab=announcements',
       metadata: { broadcastId: saved.id, priority: saved.priority },
-      sendPush: true
+      sendPush: true,
+      senderRole: request.user?.role || 'admin',
+      isCrud: false
     }).catch(() => {});
 
     return {

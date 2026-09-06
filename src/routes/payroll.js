@@ -418,7 +418,9 @@ export default async function payrollRoutes(fastify, options) {
         type: 'payroll',
         targetTab: 'payroll',
         targetUrl: '/?tab=payroll',
-        metadata: { payrollId: id, month: record.payroll_month, netPayable: record.net_payable }
+        metadata: { payrollId: id, month: record.payroll_month, netPayable: record.net_payable },
+        senderRole: request.user?.role || 'admin',
+        isCrud: true
       }).catch(() => {});
     }
 

@@ -77,7 +77,9 @@ export default async function tasksRoutes(fastify, options) {
         type: 'task',
         targetTab: 'task-tracker',
         targetUrl: '/?tab=task-tracker',
-        metadata: { taskId: saved.id, projectName: project_name }
+        metadata: { taskId: saved.id, projectName: project_name },
+        senderRole: request.user?.role || 'admin',
+        isCrud: true
       }).catch(() => {});
     }
 
@@ -171,7 +173,9 @@ export default async function tasksRoutes(fastify, options) {
         type: 'task',
         targetTab: 'admin-tasks',
         targetUrl: '/?tab=admin-tasks',
-        metadata: { taskId: id }
+        metadata: { taskId: id },
+        senderRole: request.user?.role || 'employee',
+        isCrud: true
       }).catch(() => {});
     }
 

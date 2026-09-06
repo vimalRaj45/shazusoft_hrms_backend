@@ -160,7 +160,9 @@ export default async function leaveRoutes(fastify, options) {
       type: 'leave',
       targetTab: 'leaves',
       targetUrl: '/?tab=leaves',
-      metadata: { leaveId: saved.id, employeeId: request.user.id }
+      metadata: { leaveId: saved.id, employeeId: request.user.id },
+      senderRole: request.user?.role || 'employee',
+      isCrud: true
     }).catch(() => {});
 
     return {
@@ -220,7 +222,9 @@ export default async function leaveRoutes(fastify, options) {
       type: 'leave',
       targetTab: 'leaves',
       targetUrl: '/?tab=leaves',
-      metadata: { permId: saved.id, employeeId: request.user.id }
+      metadata: { permId: saved.id, employeeId: request.user.id },
+      senderRole: request.user?.role || 'employee',
+      isCrud: true
     }).catch(() => {});
 
     return {
@@ -343,7 +347,9 @@ export default async function leaveRoutes(fastify, options) {
       type: 'leave',
       targetTab: 'leaves',
       targetUrl: '/?tab=leaves',
-      metadata: { leaveId: id, status }
+      metadata: { leaveId: id, status },
+      senderRole: request.user?.role || 'admin',
+      isCrud: true
     }).catch(() => {});
 
     return {
@@ -423,7 +429,9 @@ export default async function leaveRoutes(fastify, options) {
       type: 'leave',
       targetTab: 'leaves',
       targetUrl: '/?tab=leaves',
-      metadata: { permId: id, status }
+      metadata: { permId: id, status },
+      senderRole: request.user?.role || 'admin',
+      isCrud: true
     }).catch(() => {});
 
     return {

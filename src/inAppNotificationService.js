@@ -108,7 +108,9 @@ export async function dispatchNotification({
   targetTab = '',       // Tab to activate on click (e.g. 'leaves', 'tasks', 'tickets')
   targetUrl = '',       // Full target URL
   metadata = {},        // Arbitrary extra payload
-  sendPush = true       // Whether to attempt background Web Push
+  sendPush = true,      // Whether to attempt background Web Push
+  senderRole = null,    // Role of user initiating the action ('employee' | 'admin' | etc.)
+  isCrud = true         // Whether this notification originates from a CRUD action
 }) {
   if (!recipientId || !title || !message) {
     console.warn('[NotificationService] Missing required dispatch fields:', { recipientId, title });

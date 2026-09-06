@@ -76,7 +76,9 @@ export default async function notificationsRoutes(fastify, options) {
       targetTab: 'dashboard',
       targetUrl: '/?tab=dashboard',
       metadata: { test: true },
-      sendPush: true
+      sendPush: true,
+      senderRole: request.user.role,
+      isCrud: false
     });
     return {
       success: true,
@@ -164,7 +166,9 @@ export default async function notificationsRoutes(fastify, options) {
       type: 'broadcast',
       targetTab: tab || 'announcements',
       targetUrl: url || '/?tab=announcements',
-      sendPush: true
+      sendPush: true,
+      senderRole: request.user.role || 'admin',
+      isCrud: false
     });
 
     return {
