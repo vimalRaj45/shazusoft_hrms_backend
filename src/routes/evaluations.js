@@ -1,6 +1,7 @@
 import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format, startOfWeek, endOfWeek, getWeek, getYear, lastDayOfMonth, getDate } from 'date-fns';
+import { getTodayDateStr, getCurrentMonthStr } from '../utils/dateTime.js';
 
 const normalizeDateStr = (d) => {
   if (!d) return '';
@@ -13,25 +14,22 @@ export default async function evaluationRoutes(fastify, options) {
   fastify.get('/monthly-status', { preHandler: [verifyAuth] }, async (request, reply) => {
     const now = new Date();
     const currentDay = getDate(now);
-    const lastDate = getDate(lastDayOfMonth(now));
-    const daysUntilMonthEnd = lastDate - currentDay;
-    const isWindowOpen = daysUntilMonthEnd < 5; // Opens 5 days before month end (e.g. day 26/27 onwards)
-    const openDate = format(new Date(now.getFullYear(), now.getMonth(), lastDate - 4), 'yyyy-MM-dd');
-    const currentMonthKey = format(now, 'yyyy-MM');
-    const currentMonthLabel = format(now, 'MMMM yyyy');
+    const lastDay = getDate(lastDayOfMonth(now));
 
-    const evalRows = await getRows('Self_Evaluations');
-    const mySubmissions = evalRows.filter(
-      e => (e.employee_id === request.user.id || e.employee_id === request.user.email) && (e.review_month?.includes(currentMonthLabel) || normalizeDateStr(e.submission_date).startsWith(currentMonthKey))
+    // Appraisal submission window: last 2 days of current month OR first 3 days of new month
+    const isWindowOpen = currentDay >= (lastDay - 1) || currentDay <= 3;
+
+    // Check if current user has already submitted this month's evaluation
+    const evaluationsRows = await getRows('Self_Evaluations');
+    const currentMonthKey = getCurrentMonthStr();
+    const mySubmissions = evaluationsRows.filter(
+      e => (e.employee_id === request.user.id || e.employee_id === request.user.email) &&
+           (e.review_month?.toLowerCase().includes(format(now, 'MMMM').toLowerCase()) || (e.submission_date || '').startsWith(currentMonthKey))
     );
 
     return {
-      currentDate: format(now, 'yyyy-MM-dd'),
-      currentMonthLabel,
-      currentMonthKey,
       isWindowOpen,
-      daysUntilMonthEnd,
-      openDate,
+      windowDaysNote: 'Window opens 2 days before month end and closes on the 3rd of the new month.',
       hasSubmittedThisMonth: mySubmissions.length > 0,
       latestSubmission: mySubmissions[0] || null
     };
@@ -40,7 +38,7 @@ export default async function evaluationRoutes(fastify, options) {
   // GET /api/evaluations/prefill-tasks (Auto-pull employee's logged tasks for the month)
   fastify.get('/prefill-tasks', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { month_year } = request.query || {};
-    const targetMonth = month_year || format(new Date(), 'yyyy-MM');
+    const targetMonth = month_year || getCurrentMonthStr();
 
     const workDoneRows = await getRows('WorkDone');
     const userTasks = workDoneRows.filter(
@@ -135,7 +133,7 @@ export default async function evaluationRoutes(fastify, options) {
       week_number: String(currentWeekNum),
       year: String(year),
       week_label: label,
-      submission_date: format(new Date(), 'yyyy-MM-dd'),
+      submission_date: getTodayDateStr(),
       accomplishments,
       challenges_blockers,
       learnings_skills,
@@ -177,7 +175,7 @@ export default async function evaluationRoutes(fastify, options) {
       reporting_person = 'Operations Manager',
       review_month = format(new Date(), 'MMMM yyyy'),
       review_period = '',
-      submission_date = format(new Date(), 'yyyy-MM-dd'),
+      submission_date = getTodayDateStr(),
       monthly_work_summary = '',
       targets_tasks = [],
       ratings = {},

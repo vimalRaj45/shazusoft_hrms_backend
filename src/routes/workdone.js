@@ -1,6 +1,7 @@
 import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format } from 'date-fns';
+import { getTodayDateStr } from '../utils/dateTime.js';
 
 export default async function workDoneRoutes(fastify, options) {
   // Create a new work done / task entry
@@ -9,8 +10,8 @@ export default async function workDoneRoutes(fastify, options) {
       project_name,
       task_title,
       description = '',
-      estimated_hours = '1',
-      actual_hours = '1',
+      estimated_hours = '0',
+      actual_hours = '0',
       status = 'Completed',
       remarks = '',
       date
@@ -20,7 +21,7 @@ export default async function workDoneRoutes(fastify, options) {
       return reply.status(400).send({ error: 'Project name and Task title are required.' });
     }
 
-    const taskDate = date || format(new Date(), 'yyyy-MM-dd');
+    const taskDate = date || getTodayDateStr();
 
     const newRecord = {
       id: `TASK-${Date.now()}-${request.user.id}`,

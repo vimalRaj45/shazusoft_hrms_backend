@@ -2,6 +2,7 @@ import { getRows, addRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { generateMonthlyAIReport } from '../mistral.js';
 import { format } from 'date-fns';
+import { getCurrentMonthStr } from '../utils/dateTime.js';
 
 const normalizeDateStr = (d) => {
   if (!d) return '';
@@ -14,7 +15,7 @@ export default async function reportsRoutes(fastify, options) {
   fastify.get('/employee-full-report', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { employee_id, month_year } = request.query || {};
     const targetEmpId = request.user.role === 'admin' && employee_id ? employee_id : request.user.id;
-    const targetMonth = month_year || format(new Date(), 'yyyy-MM');
+    const targetMonth = month_year || getCurrentMonthStr();
 
     // Fetch all related data
     const [employees, attendance, workDone, leaves, permissions] = await Promise.all([
@@ -216,7 +217,7 @@ export default async function reportsRoutes(fastify, options) {
   // POST /api/reports/generate (Mistral AI Monthly Report)
   fastify.post('/generate', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { month_year, employee_id = 'ALL' } = request.body || {};
-    const targetMonth = month_year || format(new Date(), 'yyyy-MM');
+    const targetMonth = month_year || getCurrentMonthStr();
 
     // Fetch all related rows
     const attendanceRows = await getRows('Attendance');

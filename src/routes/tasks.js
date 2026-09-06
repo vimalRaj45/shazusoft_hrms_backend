@@ -2,6 +2,7 @@ import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format } from 'date-fns';
 import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
+import { getTodayDateStr } from '../utils/dateTime.js';
 
 export default async function tasksRoutes(fastify, options) {
   // 1. Assign a new task to one or multiple staff members (Manager / Admin only)
@@ -144,7 +145,7 @@ export default async function tasksRoutes(fastify, options) {
         if (!alreadyLogged) {
           await addRow('WorkDone', {
             id: `TASK-DONE-${Date.now()}-${empId}`,
-            date: format(new Date(), 'yyyy-MM-dd'),
+            date: getTodayDateStr(),
             employee_id: empId,
             employee_name: empName,
             project_name: existing.project_name,

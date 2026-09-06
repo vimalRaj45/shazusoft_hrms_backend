@@ -4,6 +4,11 @@ import jwt from '@fastify/jwt';
 import { config } from './config.js';
 import { initDB, getStatus } from './db.js';
 
+// Enforce organizational timezone across all Date operations
+if (config.timeZone) {
+  process.env.TZ = config.timeZone;
+}
+
 import authRoutes from './routes/auth.js';
 import attendanceRoutes from './routes/attendance.js';
 import workDoneRoutes from './routes/workdone.js';

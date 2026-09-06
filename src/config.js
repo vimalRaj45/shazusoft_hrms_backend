@@ -29,7 +29,8 @@ export const config = {
   r2AccessKeyId: process.env.R2_ACCESS_KEY_ID || '',
   r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
   r2BucketName: process.env.R2_BUCKET_NAME || '',
-  r2Endpoint: process.env.R2_ENDPOINT || ''
+  r2Endpoint: process.env.R2_ENDPOINT || '',
+  timeZone: process.env.TIMEZONE || 'Asia/Kolkata'
 };
 
 // Dynamic in-memory runtime settings that admin can update from dashboard

@@ -3,6 +3,7 @@ import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { sendPushNotification } from '../pushService.js';
+import { getCurrentMonthStr } from '../utils/dateTime.js';
 
 export default async function leaveRoutes(fastify, options) {
   // GET /api/leaves/policy (Read current active leave policy)
@@ -15,7 +16,7 @@ export default async function leaveRoutes(fastify, options) {
   fastify.get('/balances', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { employee_id } = request.query || {};
     const targetEmpId = request.user.role === 'admin' && employee_id ? employee_id : request.user.id;
-    const currentMonth = format(new Date(), 'yyyy-MM');
+    const currentMonth = getCurrentMonthStr();
 
     const [policy, allLeaves, allPermissions] = await Promise.all([
       getLeavePolicy(),

@@ -2,13 +2,13 @@ import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updat
 import { verifyAdmin, hashPassword } from '../auth.js';
 import { runtimeSettings } from '../config.js';
 import { format } from 'date-fns';
-import { formatTime12h } from './attendance.js';
+import { formatTime12h, getTodayDateStr } from '../utils/dateTime.js';
 import { sendInvitationEmail } from '../mailer.js';
 
 export default async function adminRoutes(fastify, options) {
   // Live Office Attendance & Presence Board
   fastify.get('/live-status', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayStr = getTodayDateStr();
     const employees = await getRows('Employees');
     const attendance = await getRows('Attendance');
 

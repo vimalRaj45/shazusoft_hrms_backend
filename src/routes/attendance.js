@@ -2,53 +2,17 @@ import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { verifyGeofence } from '../geofence.js';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
+import {
+  getTodayDateStr,
+  getCurrentMonthStr,
+  getNowTimeStr,
+  getBusinessHoursAndMinutes,
+  formatTime12h,
+  timeTo24h,
+  parseTimeStrToDate
+} from '../utils/dateTime.js';
 
-export function formatTime12h(timeStr) {
-  if (!timeStr || timeStr === '--' || timeStr === '--:--' || timeStr === 'In Progress') {
-    return timeStr || '--:--';
-  }
-  const trimmed = String(timeStr).trim();
-  if (/AM|PM/i.test(trimmed)) return trimmed;
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (match) {
-    let hours = parseInt(match[1], 10);
-    const minutes = match[2];
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    hours = hours % 12;
-    hours = hours ? hours : 12;
-    return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
-  }
-  return trimmed;
-}
-
-export function parseTimeStrToDate(dateStr, timeStr) {
-  if (!timeStr) return new Date();
-  const trimmed = String(timeStr).trim();
-  const match12 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
-  if (match12) {
-    let hours = parseInt(match12[1], 10);
-    const minutes = parseInt(match12[2], 10);
-    const seconds = match12[3] ? parseInt(match12[3], 10) : 0;
-    const ampm = match12[4].toUpperCase();
-    if (ampm === 'PM' && hours < 12) hours += 12;
-    if (ampm === 'AM' && hours === 12) hours = 0;
-    const [y, m, d] = dateStr.split('-').map(Number);
-    return new Date(y, m - 1, d, hours, minutes, seconds);
-  }
-  const match24 = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
-  if (match24) {
-    const hours = parseInt(match24[1], 10);
-    const minutes = parseInt(match24[2], 10);
-    const seconds = match24[3] ? parseInt(match24[3], 10) : 0;
-    const [y, m, d] = dateStr.split('-').map(Number);
-    return new Date(y, m - 1, d, hours, minutes, seconds);
-  }
-  try {
-    const parsed = new Date(`${dateStr}T${trimmed}`);
-    if (!isNaN(parsed.getTime())) return parsed;
-  } catch (e) {}
-  return new Date();
-}
+export { formatTime12h, parseTimeStrToDate, timeTo24h, getTodayDateStr, getNowTimeStr };
 
 const normalizeDateStr = (d) => {
   if (!d) return '';
@@ -68,7 +32,7 @@ export default async function attendanceRoutes(fastify, options) {
 
   // GET /api/attendance/today (Current user's status today)
   fastify.get('/today', { preHandler: [verifyAuth] }, async (request, reply) => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayStr = getTodayDateStr();
     const attendanceRows = await getRows('Attendance');
     const todayRecord = attendanceRows.find(
       r => r.employee_id === request.user.id && r.date === todayStr
@@ -85,9 +49,9 @@ export default async function attendanceRoutes(fastify, options) {
   // POST /api/attendance/punch-in
   fastify.post('/punch-in', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { lat, lng } = request.body || {};
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const now = new Date();
-    const isSunday = now.getDay() === 0;
+    const todayStr = getTodayDateStr();
+    const nowTimeStr = getNowTimeStr();
+    const isSunday = new Date().getDay() === 0;
 
     // Check holidays & working calendar overrides
     const holidayRows = await getRows('Holidays');
@@ -132,7 +96,6 @@ export default async function attendanceRoutes(fastify, options) {
       };
     }
 
-    const nowTimeStr = format(now, 'hh:mm:ss a');
     const attendanceRows = await getRows('Attendance');
     const existing = attendanceRows.find(
       r => r.employee_id === request.user.id && r.date === todayStr
@@ -145,8 +108,9 @@ export default async function attendanceRoutes(fastify, options) {
       });
     }
 
-    // Determine if late (after 09:45 AM)
-    const isLate = now.getHours() > 9 || (now.getHours() === 9 && now.getMinutes() > 45);
+    // Determine if late (after 09:45 AM in business timezone)
+    const { hour: busHour, minute: busMinute } = getBusinessHoursAndMinutes();
+    const isLate = busHour > 9 || (busHour === 9 && busMinute > 45);
     const status = isLate ? 'Late' : 'Present';
 
     const newRecord = {
@@ -200,8 +164,8 @@ export default async function attendanceRoutes(fastify, options) {
       };
     }
 
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const nowTimeStr = format(new Date(), 'hh:mm:ss a');
+    const todayStr = getTodayDateStr();
+    const nowTimeStr = getNowTimeStr();
 
     const attendanceRows = await getRows('Attendance');
     const existing = attendanceRows.find(
@@ -218,7 +182,7 @@ export default async function attendanceRoutes(fastify, options) {
 
     // Calculate duration from login to logout
     const loginDateTime = parseTimeStrToDate(todayStr, existing.login_time);
-    const logoutDateTime = new Date();
+    const logoutDateTime = parseTimeStrToDate(todayStr, nowTimeStr);
     const diffMinutes = Math.max(0, differenceInMinutes(logoutDateTime, loginDateTime));
     const totalHours = (diffMinutes / 60).toFixed(2);
     const netHours = totalHours;
@@ -262,10 +226,10 @@ export default async function attendanceRoutes(fastify, options) {
   // GET /api/attendance/my-monthly-history (Full month history, past days populated, future days locked)
   fastify.get('/my-monthly-history', { preHandler: [verifyAuth] }, async (request, reply) => {
     const { month } = request.query || {};
-    const now = new Date();
-    const todayStr = format(now, 'yyyy-MM-dd');
+    const todayStr = getTodayDateStr();
+    const currentMonthKey = getCurrentMonthStr();
 
-    const targetMonthStr = (month && /^\d{4}-\d{2}$/.test(month)) ? month : format(now, 'yyyy-MM');
+    const targetMonthStr = (month && /^\d{4}-\d{2}$/.test(month)) ? month : currentMonthKey;
     const [targetYear, targetMonthNum] = targetMonthStr.split('-').map(Number);
 
     const startDate = new Date(targetYear, targetMonthNum - 1, 1);
@@ -524,10 +488,10 @@ export default async function attendanceRoutes(fastify, options) {
   // GET /api/attendance/staff-monthly-history (Admin only: view any staff member's full month day-wise timesheet)
   fastify.get('/staff-monthly-history', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { employee_id, month } = request.query || {};
-    const now = new Date();
-    const todayStr = format(now, 'yyyy-MM-dd');
+    const todayStr = getTodayDateStr();
+    const currentMonthKey = getCurrentMonthStr();
 
-    const targetMonthStr = (month && /^\d{4}-\d{2}$/.test(month)) ? month : format(now, 'yyyy-MM');
+    const targetMonthStr = (month && /^\d{4}-\d{2}$/.test(month)) ? month : currentMonthKey;
     const [targetYear, targetMonthNum] = targetMonthStr.split('-').map(Number);
 
     const startDate = new Date(targetYear, targetMonthNum - 1, 1);
