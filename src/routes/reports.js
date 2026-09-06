@@ -214,20 +214,42 @@ export default async function reportsRoutes(fastify, options) {
     };
   });
 
-  // POST /api/reports/generate (Mistral AI Monthly Report)
+  // POST /api/reports/generate (Mistral AI Monthly Report with RAG Business Context)
   fastify.post('/generate', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { month_year, employee_id = 'ALL' } = request.body || {};
     const targetMonth = month_year || getCurrentMonthStr();
 
-    // Fetch all related rows
-    const attendanceRows = await getRows('Attendance');
-    const workDoneRows = await getRows('WorkDone');
-    const breakRows = await getRows('Breaks');
-    const employeeRows = await getRows('Employees');
+    // Fetch multi-source business data in parallel (RAG Context)
+    const [
+      attendanceRows,
+      workDoneRows,
+      breakRows,
+      employeeRows,
+      assignedTasksRows,
+      weeklyReportsRows,
+      leaveRows,
+      permissionRows,
+      selfEvalRows
+    ] = await Promise.all([
+      getRows('Attendance').catch(() => []),
+      getRows('WorkDone').catch(() => []),
+      getRows('Breaks').catch(() => []),
+      getRows('Employees').catch(() => []),
+      getRows('Assigned_Tasks').catch(() => []),
+      getRows('Weekly_Reports').catch(() => []),
+      getRows('Leaves').catch(() => []),
+      getRows('Permissions').catch(() => []),
+      getRows('Self_Evaluations').catch(() => [])
+    ]);
 
     let filteredAttendance = attendanceRows.filter(a => normalizeDateStr(a.date).startsWith(targetMonth));
     let filteredWorkDone = workDoneRows.filter(w => normalizeDateStr(w.date).startsWith(targetMonth));
     let filteredBreaks = breakRows.filter(b => normalizeDateStr(b.date).startsWith(targetMonth));
+    let filteredAssignedTasks = assignedTasksRows.filter(t => !t.due_date || normalizeDateStr(t.due_date).startsWith(targetMonth) || normalizeDateStr(t.created_at).startsWith(targetMonth));
+    let filteredWeeklyReports = weeklyReportsRows.filter(w => (w.year && targetMonth.startsWith(w.year)) || (w.created_at && normalizeDateStr(w.created_at).startsWith(targetMonth)));
+    let filteredLeaves = leaveRows.filter(l => (l.start_date && normalizeDateStr(l.start_date).startsWith(targetMonth)) || (l.applied_at && normalizeDateStr(l.applied_at).startsWith(targetMonth)));
+    let filteredPermissions = permissionRows.filter(p => (p.date && normalizeDateStr(p.date).startsWith(targetMonth)) || (p.applied_at && normalizeDateStr(p.applied_at).startsWith(targetMonth)));
+    let filteredSelfEvals = selfEvalRows.filter(e => e.review_month === targetMonth || (e.created_at && normalizeDateStr(e.created_at).startsWith(targetMonth)));
 
     let targetEmployee = null;
     if (employee_id && employee_id !== 'ALL') {
@@ -236,6 +258,11 @@ export default async function reportsRoutes(fastify, options) {
         filteredAttendance = filteredAttendance.filter(a => a.employee_id === targetEmployee.id || a.employee_id === targetEmployee.email || a.employee_name === targetEmployee.name);
         filteredWorkDone = filteredWorkDone.filter(w => w.employee_id === targetEmployee.id || w.employee_id === targetEmployee.email || w.employee_name === targetEmployee.name);
         filteredBreaks = filteredBreaks.filter(b => b.employee_id === targetEmployee.id || b.employee_id === targetEmployee.email);
+        filteredAssignedTasks = filteredAssignedTasks.filter(t => t.assigned_to_id === targetEmployee.id || t.assigned_to_name === targetEmployee.name);
+        filteredWeeklyReports = filteredWeeklyReports.filter(w => w.employee_id === targetEmployee.id || w.employee_name === targetEmployee.name);
+        filteredLeaves = filteredLeaves.filter(l => l.employee_id === targetEmployee.id || l.employee_name === targetEmployee.name);
+        filteredPermissions = filteredPermissions.filter(p => p.employee_id === targetEmployee.id || p.employee_name === targetEmployee.name);
+        filteredSelfEvals = filteredSelfEvals.filter(e => e.employee_id === targetEmployee.id || e.employee_name === targetEmployee.name);
       }
     }
 
@@ -244,7 +271,12 @@ export default async function reportsRoutes(fastify, options) {
       targetEmployee,
       attendanceRecords: filteredAttendance,
       workDoneRecords: filteredWorkDone,
-      breakRecords: filteredBreaks
+      breakRecords: filteredBreaks,
+      assignedTasksRecords: filteredAssignedTasks,
+      weeklyReportsRecords: filteredWeeklyReports,
+      leaveRecords: filteredLeaves,
+      permissionRecords: filteredPermissions,
+      selfEvaluationRecords: filteredSelfEvals
     });
 
     const reportRecord = {
@@ -257,16 +289,22 @@ export default async function reportsRoutes(fastify, options) {
       summary: reportResult.summary,
       productivity_score: String(reportResult.productivityScore),
       key_insights: JSON.stringify(reportResult.keyInsights),
+      performance_gaps: JSON.stringify(reportResult.performanceGaps || []),
+      strategic_suggestions: JSON.stringify(reportResult.strategicSuggestions || []),
+      next_month_roadmap: JSON.stringify(reportResult.nextMonthRoadmap || []),
       generated_at: reportResult.generatedAt
     };
 
     await addRow('AI_Reports', reportRecord);
 
     return {
-      message: `Mistral AI Monthly Report for ${targetMonth} generated successfully!`,
+      message: `Executive AI Analytics Report for ${targetMonth} generated successfully!`,
       report: {
         ...reportRecord,
-        key_insights: reportResult.keyInsights
+        key_insights: reportResult.keyInsights,
+        performance_gaps: reportResult.performanceGaps || [],
+        strategic_suggestions: reportResult.strategicSuggestions || [],
+        next_month_roadmap: reportResult.nextMonthRoadmap || []
       }
     };
   });
@@ -276,14 +314,35 @@ export default async function reportsRoutes(fastify, options) {
     const rows = await getRows('AI_Reports');
     const parsed = rows.map(r => {
       let insights = [];
+      let gaps = [];
+      let suggestions = [];
+      let roadmap = [];
       try {
-        insights = typeof r.key_insights === 'string' ? JSON.parse(r.key_insights) : r.key_insights;
+        insights = typeof r.key_insights === 'string' ? JSON.parse(r.key_insights) : (r.key_insights || []);
       } catch (e) {
         insights = [r.key_insights];
       }
+      try {
+        gaps = typeof r.performance_gaps === 'string' ? JSON.parse(r.performance_gaps) : (r.performance_gaps || []);
+      } catch (e) {
+        gaps = [];
+      }
+      try {
+        suggestions = typeof r.strategic_suggestions === 'string' ? JSON.parse(r.strategic_suggestions) : (r.strategic_suggestions || []);
+      } catch (e) {
+        suggestions = [];
+      }
+      try {
+        roadmap = typeof r.next_month_roadmap === 'string' ? JSON.parse(r.next_month_roadmap) : (r.next_month_roadmap || []);
+      } catch (e) {
+        roadmap = [];
+      }
       return {
         ...r,
-        key_insights: insights
+        key_insights: insights,
+        performance_gaps: gaps,
+        strategic_suggestions: suggestions,
+        next_month_roadmap: roadmap
       };
     });
 

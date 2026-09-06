@@ -210,7 +210,17 @@ export default async function adminRoutes(fastify, options) {
   // Freeze / Unfreeze employee compliance documents and profile records
   fastify.post('/employees/:id/freeze-documents', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { id } = request.params;
-    const { frozen = true, remarks = '' } = request.body || {};
+    const body = request.body || {};
+
+    // Support both 'frozen' and 'freeze' fields, handling boolean or string formats
+    let isFrozen;
+    if (body.frozen !== undefined) {
+      isFrozen = body.frozen === true || body.frozen === 'true' || body.frozen === 1 || body.frozen === '1';
+    } else if (body.freeze !== undefined) {
+      isFrozen = body.freeze === true || body.freeze === 'true' || body.freeze === 1 || body.freeze === '1';
+    } else {
+      isFrozen = true;
+    }
 
     const employees = await getRows('Employees');
     const user = employees.find(e => e.id === id);
@@ -219,10 +229,10 @@ export default async function adminRoutes(fastify, options) {
     }
 
     const freezePayload = {
-      documents_frozen: Boolean(frozen),
-      frozen_at: frozen ? new Date().toISOString() : null,
-      frozen_by: frozen ? request.user.id : null,
-      frozen_by_name: frozen ? request.user.name : null
+      documents_frozen: Boolean(isFrozen),
+      frozen_at: isFrozen ? new Date().toISOString() : null,
+      frozen_by: isFrozen ? request.user.id : null,
+      frozen_by_name: isFrozen ? request.user.name : null
     };
 
     const updated = await updateRow('Employees', 'id', id, freezePayload);
@@ -230,12 +240,12 @@ export default async function adminRoutes(fastify, options) {
 
     return {
       success: true,
-      message: frozen
+      message: isFrozen
         ? `Compliance documents & profile for ${clean.name} have been FROZEN and verified.`
         : `Compliance documents & profile for ${clean.name} have been UNFROZEN for employee edits.`,
       employee: {
         ...clean,
-        documents_frozen: Boolean(clean.documents_frozen === true || clean.documents_frozen === 'true' || clean.documents_frozen === 't')
+        documents_frozen: Boolean(isFrozen)
       }
     };
   });

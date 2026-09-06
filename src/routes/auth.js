@@ -168,7 +168,13 @@ export default async function authRoutes(fastify, options) {
         });
       }
       const { password_hash, ...clean } = freshUser;
-      return { user: { ...clean, work_mode: clean.work_mode || 'office' } };
+      return {
+        user: {
+          ...clean,
+          work_mode: clean.work_mode || 'office',
+          documents_frozen: Boolean(clean.documents_frozen === true || clean.documents_frozen === 'true' || clean.documents_frozen === 't')
+        }
+      };
     }
     return { user: { ...request.user, work_mode: request.user.work_mode || 'office' } };
   });

@@ -315,6 +315,9 @@ async function initTables() {
       summary TEXT,
       productivity_score TEXT,
       key_insights TEXT,
+      performance_gaps TEXT,
+      strategic_suggestions TEXT,
+      next_month_roadmap TEXT,
       generated_at TEXT
     );`,
     `CREATE TABLE IF NOT EXISTS holidays (
@@ -400,7 +403,10 @@ async function initTables() {
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_at TEXT;`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_by TEXT;`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_by_name TEXT;`,
-    `ALTER TABLE leaves ADD COLUMN IF NOT EXISTS review_remarks TEXT;`
+    `ALTER TABLE leaves ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
+    `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS performance_gaps TEXT;`,
+    `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS strategic_suggestions TEXT;`,
+    `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS next_month_roadmap TEXT;`
   ];
 
   for (const m of migrations) {
@@ -499,7 +505,11 @@ export async function getRows(tableName) {
       const rows = res.rows.map(r => {
         const clean = {};
         for (const [k, v] of Object.entries(r)) {
-          clean[k] = v === null || v === undefined ? '' : String(v);
+          if (tableName === 'Employees' && k === 'documents_frozen') {
+            clean[k] = Boolean(v === true || v === 'true' || v === 't');
+          } else {
+            clean[k] = v === null || v === undefined ? '' : String(v);
+          }
         }
         return clean;
       });
@@ -603,7 +613,11 @@ export async function updateRow(tableName, matchField, matchValue, updateData) {
           const updated = res.rows[0];
           const clean = {};
           for (const [k, v] of Object.entries(updated)) {
-            clean[k] = v === null || v === undefined ? '' : String(v);
+            if (tableName === 'Employees' && k === 'documents_frozen') {
+              clean[k] = Boolean(v === true || v === 'true' || v === 't');
+            } else {
+              clean[k] = v === null || v === undefined ? '' : String(v);
+            }
           }
           invalidateCache(tableName);
           return clean;

@@ -844,6 +844,44 @@ async function runAllTests() {
     expect(body.projectBreakdown.length).toBeGreaterThan(0);
   });
 
+  await assertTest('POST /api/reports/generate (RAG Context, Gap Analysis, Suggestions & Roadmap) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/reports/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`
+      },
+      body: JSON.stringify({
+        month_year: '2026-09',
+        employee_id: 'EMP-STAFF-01'
+      })
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.report).toBeTruthy();
+    expect(body.report.summary).toBeTruthy();
+    expect(Array.isArray(body.report.performance_gaps)).toBe(true);
+    expect(body.report.performance_gaps.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.report.strategic_suggestions)).toBe(true);
+    expect(body.report.strategic_suggestions.length).toBeGreaterThan(0);
+    expect(Array.isArray(body.report.next_month_roadmap)).toBe(true);
+    expect(body.report.next_month_roadmap.length).toBeGreaterThan(0);
+  });
+
+  await assertTest('GET /api/reports/history (Archived Reports with Parsed Gaps & Suggestions) -> 200', async () => {
+    const res = await fetch(`${BASE_URL}/api/reports/history`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.reports)).toBe(true);
+    expect(body.reports.length).toBeGreaterThan(0);
+    const latest = body.reports[0];
+    expect(Array.isArray(latest.performance_gaps)).toBe(true);
+    expect(Array.isArray(latest.strategic_suggestions)).toBe(true);
+    expect(Array.isArray(latest.next_month_roadmap)).toBe(true);
+  });
+
   await assertTest('GET /api/search?q=Vimal -> 200 & Multi-Entity Results', async () => {
     const res = await fetch(`${BASE_URL}/api/search?q=Vimal`, {
       headers: { Authorization: `Bearer ${adminToken}` }
