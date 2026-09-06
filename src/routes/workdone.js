@@ -23,11 +23,23 @@ export default async function workDoneRoutes(fastify, options) {
 
     const taskDate = date || getTodayDateStr();
 
+    let targetEmpId = request.user.id;
+    let targetEmpName = request.user.name;
+
+    if (request.user.role === 'admin' && request.body?.employee_id) {
+      const employees = await getRows('Employees');
+      const target = employees.find(e => e.id === request.body.employee_id || e.email === request.body.employee_id);
+      if (target) {
+        targetEmpId = target.id;
+        targetEmpName = target.name;
+      }
+    }
+
     const newRecord = {
-      id: `TASK-${Date.now()}-${request.user.id}`,
+      id: `TASK-${Date.now()}-${targetEmpId}`,
       date: taskDate,
-      employee_id: request.user.id,
-      employee_name: request.user.name,
+      employee_id: targetEmpId,
+      employee_name: targetEmpName,
       project_name,
       task_title,
       description,
