@@ -36,15 +36,15 @@ async function getMailboxResourceId() {
  * @param {string} params.otp
  * @param {string} [params.employeeName]
  */
-export async function sendOTPEmail({ toEmail, otp, employeeName = 'Valued Team Member' }) {
+export async function sendOTPEmail({ toEmail, otp, employeeName = 'Team Member' }) {
   const mailboxId = await getMailboxResourceId();
   const configuration = new Configuration({
     accessToken: config.hostingerApiKey
   });
   const sendApi = new SendApi(configuration);
 
-  const subject = `${otp} is your Shazu Soft HRMS Verification Code`;
-  const plainText = `Hello ${employeeName},\n\nYour 6-digit login verification code for Shazu Soft HRMS is: ${otp}\n\nThis code will expire in 10 minutes. If you did not request this code, please ignore this email or notify management immediately.\n\nBest regards,\nShazu Soft Technologies Management`;
+  const subject = `${otp} is your Shazu Soft HRMS verification code`;
+  const plainText = `Dear ${employeeName},\n\nYour single-use verification code for accessing the Shazu Soft HRMS portal is: ${otp}\n\nThis verification code is valid for 10 minutes. For security reasons, please do not share this code with anyone.\n\nIf you did not initiate this authentication request, please notify HR Administration immediately.\n\nRegards,\nHuman Resources & Information Security Administration\nShazu Soft Technologies`;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -54,22 +54,23 @@ export async function sendOTPEmail({ toEmail, otp, employeeName = 'Valued Team M
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 40px 15px;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 36px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" max-width="520" style="max-width: 520px; background-color: #ffffff; border-radius: 6px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
-          <!-- Header Banner -->
+        <table role="presentation" width="100%" style="max-width: 520px; background-color: #ffffff; border-radius: 6px; border: 1px solid #e2e8f0; overflow: hidden;">
+          
+          <!-- Corporate Header -->
           <tr>
-            <td style="background-color: #133829; padding: 28px 32px; text-align: left;">
+            <td style="background-color: #133829; padding: 22px 28px; text-align: left;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td>
-                    <div style="font-size: 18px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; text-transform: uppercase;">
-                      SHAZU SOFT TECHNOLOGIES
+                    <div style="font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.04em; text-transform: uppercase;">
+                      Shazu Soft Technologies
                     </div>
-                    <div style="font-size: 12px; color: #a7f3d0; margin-top: 4px; font-weight: 600;">
-                      HRMS Portal • Secure Authentication
+                    <div style="font-size: 11px; color: #cbd5e1; margin-top: 3px; font-weight: 500;">
+                      Human Resources Management System • Portal Authentication
                     </div>
                   </td>
                 </tr>
@@ -77,47 +78,52 @@ export async function sendOTPEmail({ toEmail, otp, employeeName = 'Valued Team M
             </td>
           </tr>
 
-          <!-- Content Body -->
+          <!-- Body Content -->
           <tr>
-            <td style="padding: 36px 32px 28px 32px;">
-              <p style="font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 12px 0;">
-                Hello ${employeeName},
+            <td style="padding: 28px 28px 20px 28px;">
+              <p style="font-size: 14px; color: #0f172a; margin: 0 0 14px 0; font-weight: 600;">
+                Dear ${employeeName},
               </p>
-              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 24px 0;">
-                Use the following 6-digit one-time password (OTP) to securely sign in to your <strong>Shazu Soft HRMS</strong> workspace.
+              <p style="font-size: 13.5px; color: #334155; line-height: 1.6; margin: 0 0 20px 0;">
+                Your single-use verification code to sign in to the Shazu Soft HRMS portal is provided below.
               </p>
 
-              <!-- OTP Code Display Card -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 24px 0;">
+              <!-- Verification Code Block -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 20px 0;">
                 <tr>
-                  <td align="center" style="background-color: #f8fafc; border: 1.5px dashed #059669; border-radius: 6px; padding: 22px 16px;">
-                    <div style="font-size: 11px; font-weight: 800; color: #059669; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px;">
-                      YOUR VERIFICATION CODE
+                  <td align="center" style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 18px 16px;">
+                    <div style="font-size: 11px; font-weight: 700; color: #475569; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px;">
+                      Verification Code
                     </div>
-                    <div style="font-size: 34px; font-weight: 900; color: #133829; letter-spacing: 8px; font-family: 'Courier New', Courier, monospace;">
+                    <div style="font-size: 32px; font-weight: 800; color: #0f172a; letter-spacing: 8px; font-family: 'Courier New', Courier, monospace;">
                       ${otp}
                     </div>
-                    <div style="font-size: 12px; color: #64748b; margin-top: 8px; font-weight: 600;">
-                      ⏳ Valid for 10 minutes
+                    <div style="font-size: 11.5px; color: #64748b; margin-top: 6px;">
+                      Valid for 10 minutes
                     </div>
                   </td>
                 </tr>
               </table>
 
-              <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 20px 0 0 0;">
-                For your security, never share this code with anyone. If you did not initiate this login request, please contact your HR manager immediately.
+              <p style="font-size: 12.5px; color: #64748b; line-height: 1.6; margin: 18px 0 24px 0;">
+                For security reasons, do not share this code with anyone. If you did not initiate this login request, please disregard this email or report the event to HR Administration.
               </p>
+
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 14px; font-size: 13px; color: #334155;">
+                <p style="margin: 0; font-weight: 600;">Regards,</p>
+                <p style="margin: 2px 0 0 0; color: #64748b; font-size: 12px;">Human Resources Administration<br>Shazu Soft Technologies</p>
+              </div>
             </td>
           </tr>
 
-          <!-- Footer -->
+          <!-- Corporate Footer -->
           <tr>
-            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 32px; text-align: center;">
-              <p style="font-size: 11px; color: #94a3b8; margin: 0 0 4px 0;">
-                Sent via Shazu Soft Secure Mail Service (${config.hostingerSenderEmail})
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 28px; text-align: center;">
+              <p style="font-size: 11px; color: #94a3b8; margin: 0 0 3px 0;">
+                This is an automated system communication sent by Shazu Soft HRMS (${config.hostingerSenderEmail}).
               </p>
               <p style="font-size: 11px; color: #94a3b8; margin: 0;">
-                © 2026 Shazu Soft Technologies & Operations. All rights reserved.
+                © 2026 Shazu Soft Technologies. All rights reserved. Confidential.
               </p>
             </td>
           </tr>
@@ -143,7 +149,7 @@ export async function sendOTPEmail({ toEmail, otp, employeeName = 'Valued Team M
 }
 
 /**
- * Send an official, professional notification email when management declines or requests action on a request
+ * Send an official notification email when management declines or requests action on a request
  * @param {Object} params
  * @param {string} params.toEmail
  * @param {string} params.employeeName
@@ -158,7 +164,7 @@ export async function sendProfessionalRejectionEmail({
   requestType = 'HRMS Request',
   rejectionReason,
   details = {},
-  adminName = 'HR & Operations Management'
+  adminName = 'HR Administration'
 }) {
   try {
     const mailboxId = await getMailboxResourceId();
@@ -167,11 +173,11 @@ export async function sendProfessionalRejectionEmail({
     });
     const sendApi = new SendApi(configuration);
 
-    const subject = `Update on your ${requestType} — Shazu Soft HRMS`;
+    const subject = `Status Update: ${requestType} — Shazu Soft HRMS`;
     const dateStr = details.date || details.start_date || 'N/A';
     const durationStr = details.duration || details.total_days || details.requested_times || 'N/A';
 
-    const plainText = `Hello ${employeeName},\n\nThis is an official communication regarding your recent ${requestType}.\n\nStatus: Request Declined / Action Required\nRequest Date: ${dateStr}\nDetails: ${durationStr}\n\nManagement Remarks / Reason:\n${rejectionReason}\n\nReviewed By: ${adminName}\n\nIf you have questions or require further clarification, please coordinate directly with your reporting manager.\n\nBest regards,\nShazu Soft Technologies Management`;
+    const plainText = `Dear ${employeeName},\n\nThis is an official communication regarding your recent ${requestType}.\n\nReview Status: Declined / Action Required\nRequest Date: ${dateStr}\nDetails: ${durationStr}\nReviewed By: ${adminName}\n\nManagement Remarks / Reason:\n${rejectionReason}\n\nIf you have questions or wish to submit an amended request, please coordinate with your reporting manager or HR administration.\n\nRegards,\nHuman Resources Administration\nShazu Soft Technologies`;
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -181,96 +187,88 @@ export async function sendProfessionalRejectionEmail({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.5;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 36px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width: 540px; background-color: #ffffff; border-radius: 6px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.04);">
+        <table role="presentation" width="100%" style="max-width: 540px; background-color: #ffffff; border-radius: 6px; border: 1px solid #e2e8f0; overflow: hidden;">
+          
           <!-- Corporate Header -->
           <tr>
-            <td style="background-color: #133829; padding: 24px 30px; text-align: left;">
-              <div style="font-size: 17px; font-weight: 800; color: #ffffff; letter-spacing: 0.5px; text-transform: uppercase;">
-                SHAZU SOFT TECHNOLOGIES
+            <td style="background-color: #133829; padding: 22px 28px; text-align: left;">
+              <div style="font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.04em; text-transform: uppercase;">
+                Shazu Soft Technologies
               </div>
-              <div style="font-size: 12px; color: #a7f3d0; margin-top: 3px; font-weight: 600;">
-                Human Resource & Operations Portal
+              <div style="font-size: 11px; color: #cbd5e1; margin-top: 3px; font-weight: 500;">
+                Human Resources Management System • Request Review Notice
               </div>
-            </td>
-          </tr>
-
-          <!-- Status Alert Banner -->
-          <tr>
-            <td style="background-color: #fef2f2; border-bottom: 1px solid #fee2e2; padding: 14px 30px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <span style="display: inline-block; background-color: #ef4444; color: #ffffff; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.5px;">
-                      Decision: Declined
-                    </span>
-                    <span style="font-size: 13px; font-weight: 600; color: #991b1b; margin-left: 10px;">
-                      ${requestType} Status Update
-                    </span>
-                  </td>
-                </tr>
-              </table>
             </td>
           </tr>
 
           <!-- Main Content -->
           <tr>
-            <td style="padding: 28px 30px;">
-              <p style="font-size: 15px; font-weight: 700; color: #0f172a; margin: 0 0 12px 0;">
+            <td style="padding: 26px 28px 20px 28px;">
+              <p style="font-size: 14px; color: #0f172a; margin: 0 0 12px 0; font-weight: 600;">
                 Dear ${employeeName},
               </p>
-              <p style="font-size: 14px; color: #475569; line-height: 1.6; margin: 0 0 20px 0;">
-                Management has reviewed your submitted <strong>${requestType}</strong> and was unable to approve it at this time. Please review the specific feedback and details below:
+              <p style="font-size: 13.5px; color: #334155; line-height: 1.6; margin: 0 0 18px 0;">
+                This communication is regarding the <strong>${requestType}</strong> you submitted. Following administrative review, management was unable to approve the request as submitted.
               </p>
 
               <!-- Request Parameters Table -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; margin-bottom: 20px; font-size: 13px;">
-                <tr>
-                  <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; width: 35%; font-weight: 600;">Request Type:</td>
-                  <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 700;">${requestType}</td>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border: 1px solid #e2e8f0; border-radius: 4px; margin-bottom: 18px; font-size: 13px; border-collapse: collapse;">
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; width: 35%; font-weight: 600;">Request Type:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">${requestType}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Date / Period:</td>
-                  <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">${dateStr}</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Date / Period:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${dateStr}</td>
                 </tr>
                 ${details.leaveType ? `
-                <tr>
-                  <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Category:</td>
-                  <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">${details.leaveType}</td>
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Leave Category:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${details.leaveType}</td>
                 </tr>` : ''}
                 <tr>
-                  <td style="padding: 10px 14px; color: #64748b; font-weight: 600;">Reviewed By:</td>
-                  <td style="padding: 10px 14px; color: #0f172a; font-weight: 600;">${adminName}</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Review Status:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #991b1b; font-weight: 700;">Declined / Action Required</td>
+                </tr>
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 9px 14px; color: #64748b; font-weight: 600;">Reviewed By:</td>
+                  <td style="padding: 9px 14px; color: #0f172a;">${adminName}</td>
                 </tr>
               </table>
 
-              <!-- Management Feedback / Justification Box -->
-              <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 16px; border-radius: 0 4px 4px 0; margin-bottom: 22px;">
-                <div style="font-size: 11px; font-weight: 800; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">
-                  Management Reason / Instructions
+              <!-- Management Remarks Box -->
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 3px solid #64748b; padding: 12px 16px; border-radius: 0 4px 4px 0; margin-bottom: 18px;">
+                <div style="font-size: 11px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px;">
+                  Management Explanation / Remarks:
                 </div>
-                <div style="font-size: 13.5px; color: #78350f; font-weight: 500; line-height: 1.55;">
+                <div style="font-size: 13px; color: #1e293b; line-height: 1.5;">
                   ${rejectionReason}
                 </div>
               </div>
 
-              <p style="font-size: 13px; color: #64748b; line-height: 1.6; margin: 0;">
-                If you believe this requires reconsideration or you need to resubmit with updated details, please coordinate with your reporting team or submit a revised request on the portal.
+              <p style="font-size: 12.5px; color: #64748b; line-height: 1.6; margin: 0 0 20px 0;">
+                If you need to provide supplementary information or submit a revised request, please coordinate with your reporting manager or update your submission through the portal.
               </p>
+
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 14px; font-size: 13px; color: #334155;">
+                <p style="margin: 0; font-weight: 600;">Regards,</p>
+                <p style="margin: 2px 0 0 0; color: #64748b; font-size: 12px;">Human Resources & Operations Administration<br>Shazu Soft Technologies</p>
+              </div>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 18px 30px; text-align: center;">
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 28px; text-align: center;">
               <p style="font-size: 11px; color: #94a3b8; margin: 0 0 3px 0;">
-                Sent automatically via Shazu Soft HRMS Notification Engine (${config.hostingerSenderEmail})
+                Sent automatically via Shazu Soft HRMS Notification Service (${config.hostingerSenderEmail})
               </p>
               <p style="font-size: 11px; color: #94a3b8; margin: 0;">
-                © 2026 Shazu Soft Technologies. All rights reserved.
+                © 2026 Shazu Soft Technologies. All rights reserved. Confidential.
               </p>
             </td>
           </tr>
@@ -291,16 +289,16 @@ export async function sendProfessionalRejectionEmail({
     };
 
     const response = await sendApi.sendEmail(mailboxId, payload);
-    console.log(`[Hostinger Mail] Professional Rejection Email successfully dispatched to ${toEmail}. Status: ${response.status}`);
+    console.log(`[Hostinger Mail] Rejection notice email dispatched to ${toEmail}. Status: ${response.status}`);
     return response;
   } catch (err) {
-    console.error(`[Hostinger Mail] Failed to dispatch rejection email to ${toEmail}:`, err.response?.data || err.message);
+    console.error(`[Hostinger Mail] Failed to dispatch rejection notice to ${toEmail}:`, err.response?.data || err.message);
     return null;
   }
 }
 
 /**
- * Send an official Welcome & Onboarding Invitation Email to a new employee
+ * Send an official Onboarding Welcome Email to a new employee
  * @param {Object} params
  * @param {string} params.toEmail
  * @param {string} params.employeeName
@@ -313,7 +311,7 @@ export async function sendProfessionalRejectionEmail({
  */
 export async function sendInvitationEmail({
   toEmail,
-  employeeName = 'Valued Team Member',
+  employeeName = 'Team Member',
   employeeId,
   role = 'employee',
   department = 'General',
@@ -328,10 +326,10 @@ export async function sendInvitationEmail({
     });
     const sendApi = new SendApi(configuration);
 
-    const subject = `Welcome to Shazu Soft Technologies — Your HRMS Workspace Access (${employeeId})`;
+    const subject = `Welcome to Shazu Soft Technologies — HRMS Portal Access (${employeeId})`;
     const workModeLabel = workMode === 'wfh' ? 'Work From Home (Remote)' : 'In-Office (GPS Perimeter)';
 
-    const plainText = `Welcome to Shazu Soft Technologies, ${employeeName}!\n\nYour official HRMS portal account has been provisioned by management.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Email: ${toEmail}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Staff Member'}\n- Work Mode: ${workModeLabel}\n\nHow to Access the Portal:\n1. Open ${portalUrl}\n2. Enter your registered email (${toEmail})\n3. Receive and submit your 6-digit One-Time Passcode (OTP). No password required!\n4. Complete and verify your compliance records.\n\nWelcome aboard!\nShazu Soft Technologies Management`;
+    const plainText = `Dear ${employeeName},\n\nWelcome to Shazu Soft Technologies. Your employee account has been created in the Shazu Soft HRMS portal.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Official Email: ${toEmail}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Employee'}\n- Work Mode: ${workModeLabel}\n\nPortal Authentication Instructions:\n1. Navigate to: ${portalUrl}\n2. Enter your registered email address (${toEmail}).\n3. Click "Send Verification Code" to receive your 6-digit one-time passcode via email.\n4. Enter the code to access your workspace.\n\nRegards,\nHuman Resources Administration\nShazu Soft Technologies`;
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -341,102 +339,98 @@ export async function sendInvitationEmail({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${subject}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 35px 15px;">
+<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #0f172a; line-height: 1.5;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 36px 16px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" style="max-width: 580px; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+        <table role="presentation" width="100%" style="max-width: 540px; background-color: #ffffff; border-radius: 6px; border: 1px solid #e2e8f0; overflow: hidden;">
           
-          <!-- Corporate Header Banner -->
+          <!-- Corporate Header -->
           <tr>
-            <td style="background-color: #133829; padding: 26px 30px; text-align: left;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-                <tr>
-                  <td>
-                    <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 800; letter-spacing: 0.03em;">
-                      SHAZU SOFT TECHNOLOGIES
-                    </h1>
-                    <p style="margin: 4px 0 0 0; color: #a7f3d0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">
-                      Human Resources Management System • Portal Onboarding
-                    </p>
-                  </td>
-                </tr>
-              </table>
+            <td style="background-color: #133829; padding: 22px 28px; text-align: left;">
+              <div style="font-size: 16px; font-weight: 700; color: #ffffff; letter-spacing: 0.04em; text-transform: uppercase;">
+                Shazu Soft Technologies
+              </div>
+              <div style="font-size: 11px; color: #cbd5e1; margin-top: 3px; font-weight: 500;">
+                Human Resources Management System • Portal Onboarding
+              </div>
             </td>
           </tr>
 
-          <!-- Main Body Content -->
+          <!-- Main Content -->
           <tr>
-            <td style="padding: 32px 30px;">
-              <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px; font-weight: 800;">
-                Welcome to the Team, ${employeeName}!
-              </h2>
-              <p style="margin: 0 0 20px 0; color: #475569; font-size: 14px; line-height: 1.6;">
-                Your official employee account has been created by HR & Operations Management. You can now access your daily attendance punch, timesheets, tasks, leave quotas, and employee documents through our secure portal.
+            <td style="padding: 26px 28px 20px 28px;">
+              <p style="font-size: 14px; color: #0f172a; margin: 0 0 12px 0; font-weight: 600;">
+                Dear ${employeeName},
+              </p>
+              <p style="font-size: 13.5px; color: #334155; line-height: 1.6; margin: 0 0 18px 0;">
+                Welcome to Shazu Soft Technologies. Your employee profile has been provisioned in the corporate HRMS portal. You may now access the system to view your daily attendance logs, timesheets, tasks, and leave balances.
               </p>
 
-              <!-- Credentials Card -->
-              <table role="presentation" width="100%" style="background-color: #f1f5f9; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 24px; border-collapse: collapse;">
-                <tr>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b; width: 35%;">Employee ID</td>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 800; color: #133829;">${employeeId}</td>
+              <!-- Account Specifications Table -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border: 1px solid #e2e8f0; border-radius: 4px; margin-bottom: 20px; font-size: 13px; border-collapse: collapse;">
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; width: 35%; font-weight: 600;">Employee ID:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 700;">${employeeId}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b;">Registered Email</td>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; color: #0f172a;">${toEmail}</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Official Email:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${toEmail}</td>
+                </tr>
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Department:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${department}</td>
                 </tr>
                 <tr>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b;">Department</td>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #334155;">${department}</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Designation:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${designation}</td>
                 </tr>
-                <tr>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 12px; font-weight: 700; color: #64748b;">Designation</td>
-                  <td style="padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #334155;">${designation}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 12px 16px; font-size: 12px; font-weight: 700; color: #64748b;">Work Mode</td>
-                  <td style="padding: 12px 16px; font-size: 13px; font-weight: 700; color: #0284c7;">${workModeLabel}</td>
+                <tr style="background-color: #f8fafc;">
+                  <td style="padding: 9px 14px; color: #64748b; font-weight: 600;">Work Mode:</td>
+                  <td style="padding: 9px 14px; color: #0f172a;">${workModeLabel}</td>
                 </tr>
               </table>
 
-              <!-- Login Guide -->
-              <h3 style="margin: 0 0 10px 0; color: #0f172a; font-size: 14px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em;">
-                How to Authenticate (Passwordless & Secured):
-              </h3>
-              <ol style="margin: 0 0 24px 0; padding-left: 20px; color: #334155; font-size: 13px; line-height: 1.7;">
-                <li>Visit the HRMS portal using the button below.</li>
+              <!-- Portal Authentication Steps -->
+              <div style="font-size: 12px; font-weight: 700; color: #334155; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">
+                Authentication Instructions:
+              </div>
+              <ol style="margin: 0 0 20px 0; padding-left: 20px; color: #475569; font-size: 13px; line-height: 1.6;">
+                <li>Navigate to the HRMS portal using the link below.</li>
                 <li>Enter your registered email address (<strong style="color: #0f172a;">${toEmail}</strong>).</li>
-                <li>Click <em>"Send Verification Code"</em> to receive a 6-digit one-time code via email.</li>
-                <li>Enter the code to immediately access your dashboard.</li>
+                <li>Click <em>"Send Verification Code"</em> to receive a 6-digit one-time passcode via email.</li>
+                <li>Enter the code to access your workspace.</li>
               </ol>
 
-              <!-- CTA Button -->
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 24px;">
+              <!-- Portal Access Button -->
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom: 22px;">
                 <tr>
-                  <td align="center">
-                    <a href="${portalUrl}" target="_blank" style="display: inline-block; background-color: #133829; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 28px; border-radius: 6px; box-shadow: 0 2px 8px rgba(19,56,41,0.25);">
-                      Launch HRMS Portal →
+                  <td align="left">
+                    <a href="${portalUrl}" target="_blank" style="display: inline-block; background-color: #133829; color: #ffffff; font-size: 13px; font-weight: 600; text-decoration: none; padding: 10px 20px; border-radius: 4px;">
+                      Access HRMS Portal
                     </a>
                   </td>
                 </tr>
               </table>
 
-              <p style="margin: 0; color: #64748b; font-size: 12px; line-height: 1.5; border-top: 1px solid #e2e8f0; padding-top: 16px;">
-                Need help or have questions? Contact your HR Manager or reach out via our internal support desk.
-              </p>
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 14px; font-size: 13px; color: #334155;">
+                <p style="margin: 0; font-weight: 600;">Regards,</p>
+                <p style="margin: 2px 0 0 0; color: #64748b; font-size: 12px;">Human Resources Administration<br>Shazu Soft Technologies</p>
+              </div>
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 30px; text-align: center;">
-              <p style="margin: 0; font-size: 11px; color: #94a3b8;">
-                Sent automatically by Shazu Soft HRMS Onboarding Service (${config.hostingerSenderEmail})<br>
-                © ${new Date().getFullYear()} Shazu Soft Technologies. All rights reserved.
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 28px; text-align: center;">
+              <p style="font-size: 11px; color: #94a3b8; margin: 0 0 3px 0;">
+                Sent automatically via Shazu Soft HRMS Onboarding Service (${config.hostingerSenderEmail})
+              </p>
+              <p style="font-size: 11px; color: #94a3b8; margin: 0;">
+                © 2026 Shazu Soft Technologies. All rights reserved. Confidential.
               </p>
             </td>
           </tr>
-
         </table>
       </td>
     </tr>
@@ -454,12 +448,10 @@ export async function sendInvitationEmail({
     };
 
     const response = await sendApi.sendEmail(mailboxId, payload);
-    console.log(`[Hostinger Mail] Onboarding invitation email successfully dispatched to ${toEmail}. Status: ${response.status}`);
+    console.log(`[Hostinger Mail] Onboarding email dispatched to ${toEmail}. Status: ${response.status}`);
     return response;
   } catch (err) {
-    console.error(`[Hostinger Mail] Failed to dispatch onboarding invitation email to ${toEmail}:`, err.response?.data || err.message);
+    console.error(`[Hostinger Mail] Failed to dispatch onboarding email to ${toEmail}:`, err.response?.data || err.message);
     return null;
   }
 }
-
-
