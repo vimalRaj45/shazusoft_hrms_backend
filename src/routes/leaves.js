@@ -3,6 +3,7 @@ import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { sendPushNotification } from '../pushService.js';
+import { dispatchNotification } from '../inAppNotificationService.js';
 import { getCurrentMonthStr } from '../utils/dateTime.js';
 
 export default async function leaveRoutes(fastify, options) {
@@ -151,13 +152,15 @@ export default async function leaveRoutes(fastify, options) {
 
     const saved = await addRow('Leaves', newLeave);
 
-    // Push notification to admin of new leave application (with deep-link tab)
-    sendPushNotification('EMP-ADMIN-01', {
-      title: 'New Leave Request',
-      body: `${request.user.name} applied for ${leave_type} (${start_date} – ${end_date}, ${totalDays} day(s)).`,
-      url: '/?tab=leaves',
-      tab: 'leaves',
-      tag: `leave-apply-${saved.id}`
+    // Real-Time in-app notification & push to admin
+    dispatchNotification({
+      recipientId: 'EMP-ADMIN-01',
+      title: 'New Leave Request 🌴',
+      message: `${request.user.name} applied for ${leave_type} (${start_date} – ${end_date}, ${totalDays} day(s)).`,
+      type: 'leave',
+      targetTab: 'leaves',
+      targetUrl: '/?tab=leaves',
+      metadata: { leaveId: saved.id, employeeId: request.user.id }
     }).catch(() => {});
 
     return {
@@ -209,13 +212,15 @@ export default async function leaveRoutes(fastify, options) {
 
     const saved = await addRow('Permissions', newPermission);
 
-    // Push notification to admin of new permission request (with deep link tab)
-    sendPushNotification('EMP-ADMIN-01', {
-      title: 'New Permission Request',
-      body: `${request.user.name} requested a short permission on ${date} (${start_time} – ${end_time}, ${duration_hours} hrs).`,
-      url: '/?tab=leaves',
-      tab: 'leaves',
-      tag: `perm-apply-${saved.id}`
+    // Real-Time in-app notification & push to admin
+    dispatchNotification({
+      recipientId: 'EMP-ADMIN-01',
+      title: 'New Permission Request ⏱️',
+      message: `${request.user.name} requested short permission on ${date} (${start_time} – ${end_time}, ${duration_hours} hrs).`,
+      type: 'leave',
+      targetTab: 'leaves',
+      targetUrl: '/?tab=leaves',
+      metadata: { permId: saved.id, employeeId: request.user.id }
     }).catch(() => {});
 
     return {
@@ -247,8 +252,20 @@ export default async function leaveRoutes(fastify, options) {
     return { leaves: rows };
   });
 
+  fastify.get('/', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const rows = await getRows('Leaves');
+    rows.sort((a, b) => new Date(b.applied_at || b.start_date).getTime() - new Date(a.applied_at || a.start_date).getTime());
+    return { leaves: rows };
+  });
+
   // Get all permissions (Admin only)
   fastify.get('/all-permissions', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const rows = await getRows('Permissions');
+    rows.sort((a, b) => new Date(b.applied_at || b.date).getTime() - new Date(a.applied_at || a.date).getTime());
+    return { permissions: rows };
+  });
+
+  fastify.get('/permissions', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const rows = await getRows('Permissions');
     rows.sort((a, b) => new Date(b.applied_at || b.date).getTime() - new Date(a.applied_at || a.date).getTime());
     return { permissions: rows };
@@ -318,13 +335,15 @@ export default async function leaveRoutes(fastify, options) {
       }
     }
 
-    // Push notification to employee about leave decision
-    sendPushNotification(existing.employee_id, {
-      title: `Leave ${status}`,
-      body: `Your ${existing.leave_type} request (${existing.start_date} – ${existing.end_date}) has been ${status.toLowerCase()} by ${request.user.name}.`,
-      url: '/?tab=leaves',
-      tab: 'leaves',
-      tag: `leave-status-${id}`
+    // Real-time In-App notification + push to employee about leave decision
+    dispatchNotification({
+      recipientId: existing.employee_id,
+      title: `Leave ${status} ${status === 'Approved' ? '✅' : '❌'}`,
+      message: `Your ${existing.leave_type} request (${existing.start_date} – ${existing.end_date}) has been ${status.toLowerCase()} by ${request.user.name}.`,
+      type: 'leave',
+      targetTab: 'leaves',
+      targetUrl: '/?tab=leaves',
+      metadata: { leaveId: id, status }
     }).catch(() => {});
 
     return {
@@ -396,13 +415,15 @@ export default async function leaveRoutes(fastify, options) {
       }
     }
 
-    // Push notification to employee about permission decision
-    sendPushNotification(existing.employee_id, {
-      title: `Permission ${status}`,
-      body: `Your permission request on ${existing.date} (${existing.start_time} – ${existing.end_time}) has been ${status.toLowerCase()} by ${request.user.name}.`,
-      url: '/?tab=leaves',
-      tab: 'leaves',
-      tag: `perm-status-${id}`
+    // Real-time in-app notification + push to employee about permission decision
+    dispatchNotification({
+      recipientId: existing.employee_id,
+      title: `Permission ${status} ${status === 'Approved' ? '✅' : '❌'}`,
+      message: `Your permission request on ${existing.date} (${existing.start_time} – ${existing.end_time}) has been ${status.toLowerCase()} by ${request.user.name}.`,
+      type: 'leave',
+      targetTab: 'leaves',
+      targetUrl: '/?tab=leaves',
+      metadata: { permId: id, status }
     }).catch(() => {});
 
     return {

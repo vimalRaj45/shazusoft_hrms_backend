@@ -40,11 +40,21 @@ export async function saveSubscription(employeeId, subscription, userAgent = '')
   const p256dh = keys.p256dh;
   const auth = keys.auth;
 
+  if (!p256dh || !auth) {
+    throw new Error('Subscription keys (p256dh and auth) are required.');
+  }
+
   // Check if a subscription already exists for this endpoint
   const allSubs = await getRows('Push_Subscriptions');
   const existing = allSubs.find(s => s.endpoint === endpoint);
 
-  // If already registered with an ID, reuse that ID so addRow ON CONFLICT (id) smoothly updates it
+  // Safely delete any prior row with this endpoint to guarantee no duplicate key violation
+  try {
+    await deleteRow('Push_Subscriptions', 'endpoint', endpoint);
+  } catch (err) {
+    console.warn('[WebPush] Notice while clearing old subscription:', err.message);
+  }
+
   const subId = existing?.id || `SUB-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   const newSub = {
@@ -84,14 +94,20 @@ export async function sendPushNotification(employeeId, notificationPayload) {
     return { sent: 0, failed: 0, message: 'No registered push subscriptions for employee.' };
   }
 
+  const targetUrl = notificationPayload.url || (notificationPayload.tab ? `/?tab=${encodeURIComponent(notificationPayload.tab)}` : '/');
   const payloadString = JSON.stringify({
     title: notificationPayload.title || 'ShazuSoft HRMS',
     body: notificationPayload.body || notificationPayload.message || 'You have a new update.',
     icon: notificationPayload.icon || '/logo.png',
     badge: notificationPayload.badge || '/logo.png',
-    url: notificationPayload.url || '/',
+    url: targetUrl,
     tag: notificationPayload.tag || `shazu-notif-${Date.now()}`,
-    data: notificationPayload.data || {},
+    data: {
+      tab: notificationPayload.tab || '',
+      url: targetUrl,
+      type: notificationPayload.type || 'info',
+      ...(notificationPayload.data || {})
+    },
     timestamp: Date.now()
   });
 
@@ -130,14 +146,20 @@ export async function broadcastPushNotification(notificationPayload) {
   const allSubs = await getRows('Push_Subscriptions');
   if (allSubs.length === 0) return { sent: 0, failed: 0 };
 
+  const targetUrl = notificationPayload.url || (notificationPayload.tab ? `/?tab=${encodeURIComponent(notificationPayload.tab)}` : '/');
   const payloadString = JSON.stringify({
     title: notificationPayload.title || 'ShazuSoft HRMS Announcement',
     body: notificationPayload.body || notificationPayload.message || '',
     icon: notificationPayload.icon || '/logo.png',
     badge: notificationPayload.badge || '/logo.png',
-    url: notificationPayload.url || '/',
+    url: targetUrl,
     tag: notificationPayload.tag || `shazu-broadcast-${Date.now()}`,
-    data: notificationPayload.data || {},
+    data: {
+      tab: notificationPayload.tab || '',
+      url: targetUrl,
+      type: notificationPayload.type || 'broadcast',
+      ...(notificationPayload.data || {})
+    },
     timestamp: Date.now()
   });
 

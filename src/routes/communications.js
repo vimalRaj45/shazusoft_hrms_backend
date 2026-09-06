@@ -3,6 +3,7 @@ import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInMinutes } from 'date-fns';
 import { formatTime12h, parseTimeStrToDate } from './attendance.js';
+import { dispatchNotification } from '../inAppNotificationService.js';
 
 export default async function communicationsRoutes(fastify, options) {
   // GET /api/communications/requests - List regularization requests
@@ -52,6 +53,17 @@ export default async function communicationsRoutes(fastify, options) {
     };
 
     const saved = await addRow('Regularizations', newRequest);
+
+    // Real-Time In-App & Push to admin
+    dispatchNotification({
+      recipientId: 'EMP-ADMIN-01',
+      title: 'Attendance Regularization Request ⏱️',
+      message: `${request.user.name} submitted punch correction for ${date}. Reason: ${reason}`,
+      type: 'attendance',
+      targetTab: 'admin-communications',
+      targetUrl: '/?tab=admin-communications',
+      metadata: { regularizationId: saved.id, employeeId: request.user.id }
+    }).catch(() => {});
 
     // Audit log
     await addRow('Communications_Log', {
@@ -174,6 +186,17 @@ export default async function communicationsRoutes(fastify, options) {
         console.error('Error sending regularization rejection email:', mailErr);
       }
     }
+
+    // Real-Time In-App & Push to employee
+    dispatchNotification({
+      recipientId: target.employee_id,
+      title: `Regularization ${action} ${action === 'Approved' ? '✅' : '❌'}`,
+      message: `Your punch correction for ${target.date} has been ${action.toLowerCase()} by ${request.user.name}.${review_remarks ? ` Remarks: ${review_remarks}` : ''}`,
+      type: 'attendance',
+      targetTab: 'communications',
+      targetUrl: '/?tab=communications',
+      metadata: { regularizationId: target.id, action }
+    }).catch(() => {});
 
     // Log resolution to Communications
     await addRow('Communications_Log', {

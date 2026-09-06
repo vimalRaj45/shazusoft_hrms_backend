@@ -1,5 +1,6 @@
 import { getRows, addRow, updateRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
+import { dispatchNotification } from '../inAppNotificationService.js';
 
 /**
  * Calculates working days in a given month (YYYY-MM)
@@ -407,6 +408,20 @@ export default async function payrollRoutes(fastify, options) {
     };
 
     await updateRow('Monthly_Payrolls', 'id', id, updatePayload);
+
+    if (isPaid && record.employee_id) {
+      const netAmount = parseFloat(record.net_payable || 0).toLocaleString('en-IN');
+      dispatchNotification({
+        recipientId: record.employee_id,
+        title: 'Salary Disbursed 💰',
+        message: `Your salary for ${record.payroll_month} (₹${netAmount}) has been disbursed and marked as Paid.`,
+        type: 'payroll',
+        targetTab: 'payroll',
+        targetUrl: '/?tab=payroll',
+        metadata: { payrollId: id, month: record.payroll_month, netPayable: record.net_payable }
+      }).catch(() => {});
+    }
+
     return reply.send({ success: true, record: { ...record, ...updatePayload } });
   });
 

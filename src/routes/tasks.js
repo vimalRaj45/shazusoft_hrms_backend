@@ -2,6 +2,7 @@ import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { format } from 'date-fns';
 import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
+import { dispatchNotification } from '../inAppNotificationService.js';
 import { getTodayDateStr } from '../utils/dateTime.js';
 
 export default async function tasksRoutes(fastify, options) {
@@ -67,14 +68,16 @@ export default async function tasksRoutes(fastify, options) {
 
     const saved = await addRow('Assigned_Tasks', newTask);
 
-    // 🔔 Push notification to all assigned staff members
+    // Real-Time In-App & Push notification to all assigned staff members
     for (const assignee of assignees) {
-      sendPushNotification(assignee.id, {
-        title: 'New Task Assigned',
-        body: `"${task_title}" on ${project_name} — due ${newTask.due_date}. Assigned by ${request.user.name}.`,
-        url: '/?tab=task-tracker',
-        tab: 'task-tracker',
-        tag: `task-assigned-${saved.id}`
+      dispatchNotification({
+        recipientId: assignee.id,
+        title: 'New Task Assigned 📋',
+        message: `"${task_title}" on ${project_name} — due ${newTask.due_date}. Assigned by ${request.user.name}.`,
+        type: 'task',
+        targetTab: 'task-tracker',
+        targetUrl: '/?tab=task-tracker',
+        metadata: { taskId: saved.id, projectName: project_name }
       }).catch(() => {});
     }
 
@@ -160,13 +163,15 @@ export default async function tasksRoutes(fastify, options) {
         }
       }
 
-      // 🔔 Push notification to admin: task completed
-      sendPushNotification('EMP-ADMIN-01', {
-        title: 'Task Completed',
-        body: `${request.user.name} completed "${existing.task_title}" on ${existing.project_name}.`,
-        url: '/?tab=admin-tasks',
-        tab: 'admin-tasks',
-        tag: `task-completed-${id}`
+      // Real-Time In-App & Push notification to assigner / admin: task completed
+      dispatchNotification({
+        recipientId: existing.assigned_by_id || 'EMP-ADMIN-01',
+        title: 'Task Completed ✅',
+        message: `${request.user.name} completed "${existing.task_title}" on ${existing.project_name}.`,
+        type: 'task',
+        targetTab: 'admin-tasks',
+        targetUrl: '/?tab=admin-tasks',
+        metadata: { taskId: id }
       }).catch(() => {});
     }
 

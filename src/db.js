@@ -24,10 +24,14 @@ const TABLE_MAP = {
   Push_Subscriptions: 'push_subscriptions',
   Leave_Policies: 'leave_policies',
   Salary_Structures: 'salary_structures',
-  Monthly_Payrolls: 'monthly_payrolls'
+  Monthly_Payrolls: 'monthly_payrolls',
+  In_App_Notifications: 'in_app_notifications'
 };
 
 const TABLE_HEADERS = {
+  In_App_Notifications: [
+    'id', 'user_id', 'title', 'message', 'type', 'target_tab', 'target_url', 'is_read', 'created_at'
+  ],
   Leave_Policies: [
     'id', 'policy_key', 'monthly_casual_leave', 'monthly_sick_leave', 'monthly_paid_leave',
     'monthly_permission_limit', 'max_permission_hours', 'updated_at', 'updated_by'
@@ -109,7 +113,8 @@ const memoryDB = {
   Push_Subscriptions: [],
   Leave_Policies: [],
   Salary_Structures: [],
-  Monthly_Payrolls: []
+  Monthly_Payrolls: [],
+  In_App_Notifications: []
 };
 
 // 15-second cache for high-speed read operations
@@ -440,7 +445,19 @@ async function initTables() {
       paid_at TEXT,
       paid_by TEXT,
       UNIQUE(payroll_month, employee_id)
-    );`
+    );`,
+    `CREATE TABLE IF NOT EXISTS in_app_notifications (
+      id VARCHAR(100) PRIMARY KEY,
+      user_id VARCHAR(50) NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      type VARCHAR(50) DEFAULT 'info',
+      target_tab VARCHAR(50),
+      target_url TEXT,
+      is_read BOOLEAN DEFAULT FALSE,
+      created_at TEXT
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_in_app_notif_user ON in_app_notifications (user_id, is_read);`
   ];
 
   for (const q of queries) {
@@ -563,6 +580,8 @@ export async function getRows(tableName) {
         for (const [k, v] of Object.entries(r)) {
           if (tableName === 'Employees' && k === 'documents_frozen') {
             clean[k] = Boolean(v === true || v === 'true' || v === 't');
+          } else if (tableName === 'In_App_Notifications' && k === 'is_read') {
+            clean[k] = Boolean(v === true || v === 'true' || v === 't');
           } else {
             clean[k] = v === null || v === undefined ? '' : String(v);
           }
@@ -589,6 +608,8 @@ export async function addRow(tableName, rowData) {
     if (tableName === 'Employees' && h === 'profile_completeness') {
       cleanData[h] = parseInt(cleanData[h], 10) || 0;
     } else if (tableName === 'Employees' && h === 'documents_frozen') {
+      cleanData[h] = Boolean(cleanData[h] === true || cleanData[h] === 'true' || cleanData[h] === 't');
+    } else if (tableName === 'In_App_Notifications' && h === 'is_read') {
       cleanData[h] = Boolean(cleanData[h] === true || cleanData[h] === 'true' || cleanData[h] === 't');
     } else if (cleanData[h] === undefined || cleanData[h] === null) {
       cleanData[h] = '';
@@ -650,6 +671,7 @@ export async function updateRow(tableName, matchField, matchValue, updateData) {
           const val = updateData[k];
           if (tableName === 'Employees' && k === 'profile_completeness') return parseInt(val, 10) || 0;
           if (tableName === 'Employees' && k === 'documents_frozen') return Boolean(val === true || val === 'true' || val === 't');
+          if (tableName === 'In_App_Notifications' && k === 'is_read') return Boolean(val === true || val === 'true' || val === 't');
           if (typeof val === 'object' && val !== null) return JSON.stringify(val);
           if (typeof val === 'number') return val;
           if (typeof val === 'boolean') return val;
@@ -670,6 +692,8 @@ export async function updateRow(tableName, matchField, matchValue, updateData) {
           const clean = {};
           for (const [k, v] of Object.entries(updated)) {
             if (tableName === 'Employees' && k === 'documents_frozen') {
+              clean[k] = Boolean(v === true || v === 'true' || v === 't');
+            } else if (tableName === 'In_App_Notifications' && k === 'is_read') {
               clean[k] = Boolean(v === true || v === 'true' || v === 't');
             } else {
               clean[k] = v === null || v === undefined ? '' : String(v);

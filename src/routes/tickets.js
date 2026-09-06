@@ -1,6 +1,7 @@
 import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
+import { dispatchNotification } from '../inAppNotificationService.js';
 
 function escapeRegex(str) {
   return (str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -83,12 +84,14 @@ async function processMentions({ content, explicitMentions, ticket, sender, excl
   for (const empId of mentionedIds) {
     if (empId !== sender.id && !excludeIds.includes(empId)) {
       const targetEmp = allEmployees.find(e => e.id === empId);
-      sendPushNotification(empId, {
+      dispatchNotification({
+        recipientId: empId,
         title: `💬 ${sender.name} mentioned you`,
-        body: `"${content.trim().slice(0, 90)}" — Ticket #${ticket.ticket_number}`,
-        url: '/?tab=chat-hub',
-        tab: 'chat-hub',
-        tag: `mention-${ticket.id}-${empId}`
+        message: `"${content.trim().slice(0, 90)}" — Ticket #${ticket.ticket_number}`,
+        type: 'ticket',
+        targetTab: 'chat-hub',
+        targetUrl: '/?tab=chat-hub',
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
       }).catch(() => {});
 
       await addRow('Communications_Log', {
@@ -234,13 +237,15 @@ export default async function ticketsRoutes(fastify, options) {
       created_at: now
     });
 
-    // Push notification to admin of new support ticket
-    sendPushNotification('EMP-ADMIN-01', {
-      title: 'New Support Ticket',
-      body: `${request.user.name} raised ${ticketNumber}: "${subject}" [${priority || 'Medium'} priority].`,
-      url: '/?tab=chat-hub',
-      tab: 'chat-hub',
-      tag: `ticket-new-${ticketId}`
+    // Real-Time In-App & Push notification to admin of new support ticket
+    dispatchNotification({
+      recipientId: 'EMP-ADMIN-01',
+      title: 'New Support Ticket 🎫',
+      message: `${request.user.name} raised ${ticketNumber}: "${subject}" [${priority || 'Medium'} priority].`,
+      type: 'ticket',
+      targetTab: 'chat-hub',
+      targetUrl: '/?tab=chat-hub',
+      metadata: { ticketId, ticketNumber, priority }
     }).catch(() => {});
 
     // Detect and notify any @mentioned staff members in initial ticket description & subject
@@ -391,39 +396,49 @@ export default async function ticketsRoutes(fastify, options) {
     // If Creator sends: notify admin
     // If Mentioned Participant sends: notify creator AND admin
     const excludedNotify = [request.user.id];
+    const snippet = message.trim().slice(0, 80) + (message.trim().length > 80 ? '...' : '');
+
     if (isAdmin) {
-      sendPushNotification(ticket.creator_id, {
-        title: 'New Message on Ticket',
-        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
-        url: '/?tab=chat-hub',
-        tab: 'chat-hub',
-        tag: `ticket-msg-${ticket.id}`
+      dispatchNotification({
+        recipientId: ticket.creator_id,
+        title: 'New Message on Ticket 💬',
+        message: `${request.user.name} replied on ${ticket.ticket_number}: "${snippet}".`,
+        type: 'ticket',
+        targetTab: 'chat-hub',
+        targetUrl: '/?tab=chat-hub',
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
       }).catch(() => {});
       excludedNotify.push(ticket.creator_id);
     } else if (request.user.id === ticket.creator_id) {
-      sendPushNotification('EMP-ADMIN-01', {
-        title: 'New Message on Ticket',
-        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
-        url: '/?tab=chat-hub',
-        tab: 'chat-hub',
-        tag: `ticket-msg-${ticket.id}`
+      dispatchNotification({
+        recipientId: 'EMP-ADMIN-01',
+        title: 'New Message on Ticket 💬',
+        message: `${request.user.name} replied on ${ticket.ticket_number}: "${snippet}".`,
+        type: 'ticket',
+        targetTab: 'chat-hub',
+        targetUrl: '/?tab=chat-hub',
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
       }).catch(() => {});
       excludedNotify.push('EMP-ADMIN-01');
     } else {
       // Mentioned participant replied: notify both ticket creator and admin
-      sendPushNotification(ticket.creator_id, {
-        title: 'Participant Replied on Ticket',
-        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
-        url: '/?tab=chat-hub',
-        tab: 'chat-hub',
-        tag: `ticket-msg-${ticket.id}`
+      dispatchNotification({
+        recipientId: ticket.creator_id,
+        title: 'Participant Replied on Ticket 💬',
+        message: `${request.user.name} replied on ${ticket.ticket_number}: "${snippet}".`,
+        type: 'ticket',
+        targetTab: 'chat-hub',
+        targetUrl: '/?tab=chat-hub',
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
       }).catch(() => {});
-      sendPushNotification('EMP-ADMIN-01', {
-        title: 'Participant Replied on Ticket',
-        body: `${request.user.name} replied on ${ticket.ticket_number}: "${message.trim().slice(0, 80)}${message.trim().length > 80 ? '...' : ''}".`,
-        url: '/?tab=chat-hub',
-        tab: 'chat-hub',
-        tag: `ticket-msg-${ticket.id}`
+      dispatchNotification({
+        recipientId: 'EMP-ADMIN-01',
+        title: 'Participant Replied on Ticket 💬',
+        message: `${request.user.name} replied on ${ticket.ticket_number}: "${snippet}".`,
+        type: 'ticket',
+        targetTab: 'chat-hub',
+        targetUrl: '/?tab=chat-hub',
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number }
       }).catch(() => {});
       excludedNotify.push(ticket.creator_id, 'EMP-ADMIN-01');
     }
@@ -501,6 +516,19 @@ export default async function ticketsRoutes(fastify, options) {
       created_at: now
     });
 
+    // Notify ticket creator of status change
+    if (ticket.creator_id && ticket.creator_id !== request.user.id) {
+      dispatchNotification({
+        recipientId: ticket.creator_id,
+        title: `Ticket ${status} ${status === 'Resolved' ? '✅' : 'ℹ️'}`,
+        message: `Ticket #${ticket.ticket_number} marked as ${status} by ${request.user.name}.${resolution_notes ? ` Notes: ${resolution_notes}` : ''}`,
+        type: 'ticket',
+        targetTab: 'chat-hub',
+        targetUrl: '/?tab=chat-hub',
+        metadata: { ticketId: ticket.id, ticketNumber: ticket.ticket_number, status }
+      }).catch(() => {});
+    }
+
     return {
       message: `Ticket ${ticket.ticket_number} marked as ${status}.`,
       ticket: updated
@@ -534,13 +562,16 @@ export default async function ticketsRoutes(fastify, options) {
 
     const saved = await addRow('Broadcasts', newBroadcast);
 
-    // Push broadcast to ALL subscribed employees
-    broadcastPushNotification({
+    // Real-Time In-App & Push broadcast to ALL employees
+    dispatchNotification({
+      recipientId: 'ALL',
       title: title.trim(),
-      body: content.trim().slice(0, 120),
-      url: '/?tab=announcements',
-      tab: 'announcements',
-      tag: `broadcast-${saved.id}`
+      message: content.trim().slice(0, 160),
+      type: 'broadcast',
+      targetTab: 'announcements',
+      targetUrl: '/?tab=announcements',
+      metadata: { broadcastId: saved.id, priority: saved.priority },
+      sendPush: true
     }).catch(() => {});
 
     return {
