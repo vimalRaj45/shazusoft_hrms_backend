@@ -76,13 +76,14 @@ export default async function attendanceRoutes(fastify, options) {
       });
     }
 
-    // Check Employee Work Mode (Office vs WFH)
+    // Check Employee Work Mode (Office vs WFH) or Admin privileges
     const employees = await getRows('Employees');
     const employee = employees.find(e => e.id === request.user.id);
     const isWfh = (employee?.work_mode === 'wfh') || (request.user?.work_mode === 'wfh');
+    const isAdmin = request.user.role === 'admin';
 
     let geo = null;
-    if (!isWfh) {
+    if (!isWfh && !isAdmin) {
       geo = verifyGeofence(parseFloat(lat), parseFloat(lng));
       if (!geo.inside) {
         return reply.status(403).send({
@@ -93,8 +94,11 @@ export default async function attendanceRoutes(fastify, options) {
     } else {
       geo = {
         inside: true,
-        isWfh: true,
-        message: 'Work From Home (WFH) mode active — GPS geofence bypassed.'
+        isWfh,
+        isAdmin,
+        message: isAdmin
+          ? 'Administrator privileges active — Executive GPS punch verified.'
+          : 'Work From Home (WFH) mode active — GPS geofence bypassed.'
       };
     }
 
@@ -162,8 +166,10 @@ export default async function attendanceRoutes(fastify, options) {
     const employee = employees.find(e => e.id === request.user.id);
     const isWfh = (employee?.work_mode === 'wfh') || (request.user?.work_mode === 'wfh');
 
+    const isAdmin = request.user.role === 'admin';
+
     let geo = null;
-    if (!isWfh) {
+    if (!isWfh && !isAdmin) {
       geo = verifyGeofence(parseFloat(lat), parseFloat(lng));
       if (!geo.inside) {
         return reply.status(403).send({
@@ -174,8 +180,11 @@ export default async function attendanceRoutes(fastify, options) {
     } else {
       geo = {
         inside: true,
-        isWfh: true,
-        message: 'Work From Home (WFH) mode active — GPS geofence bypassed.'
+        isWfh,
+        isAdmin,
+        message: isAdmin
+          ? 'Administrator privileges active — Executive GPS punch verified.'
+          : 'Work From Home (WFH) mode active — GPS geofence bypassed.'
       };
     }
 
