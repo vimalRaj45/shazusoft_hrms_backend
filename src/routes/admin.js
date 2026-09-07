@@ -79,7 +79,7 @@ export default async function adminRoutes(fastify, options) {
         documents_frozen: Boolean(rest.documents_frozen === true || rest.documents_frozen === 'true' || rest.documents_frozen === 't')
       };
     });
-    return { employees: sanitized };
+    return { success: true, employees: sanitized };
   });
 
   // Create new employee (OTP Auth enabled - password not needed)
