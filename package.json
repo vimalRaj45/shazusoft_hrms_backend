@@ -8,7 +8,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "test": "node test-suite.js",
-    "truncate": "node truncate.js"
+    "test:rbac": "node e2e-rbac-test.js",
+    "truncate": "node truncate.js",
+    "seed:demo": "node seed-demo.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1127.0",

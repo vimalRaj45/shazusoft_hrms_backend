@@ -57,7 +57,7 @@ const TABLE_HEADERS = {
   Breaks: ['id', 'attendance_id', 'employee_id', 'employee_name', 'date', 'break_type', 'start_time', 'end_time', 'duration_minutes', 'status', 'created_at'],
   WorkDone: ['id', 'date', 'employee_id', 'employee_name', 'project_name', 'task_title', 'description', 'estimated_hours', 'actual_hours', 'status', 'remarks', 'created_at'],
   Leaves: ['id', 'employee_id', 'employee_name', 'leave_type', 'start_date', 'end_date', 'total_days', 'reason', 'status', 'reviewed_by', 'applied_at'],
-  Permissions: ['id', 'employee_id', 'employee_name', 'date', 'start_time', 'end_time', 'duration_hours', 'reason', 'status', 'reviewed_by', 'applied_at'],
+  Permissions: ['id', 'employee_id', 'employee_name', 'date', 'start_time', 'end_time', 'duration_hours', 'reason', 'status', 'reviewed_by', 'review_remarks', 'applied_at'],
   Self_Evaluations: [
     'id', 'employee_id', 'employee_name', 'designation', 'department', 'reporting_person', 'review_month', 'review_period', 'submission_date',
     'monthly_work_summary', 'targets_tasks_json', 'ratings_json', 'overall_rating', 'key_accomplishments', 'challenges_faced',
@@ -233,6 +233,7 @@ async function initTables() {
       reason TEXT,
       status TEXT,
       reviewed_by TEXT,
+      review_remarks TEXT,
       applied_at TEXT
     );`,
     `CREATE TABLE IF NOT EXISTS self_evaluations (
@@ -477,6 +478,7 @@ async function initTables() {
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_by TEXT;`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_by_name TEXT;`,
     `ALTER TABLE leaves ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
+    `ALTER TABLE permissions ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS performance_gaps TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS strategic_suggestions TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS next_month_roadmap TEXT;`
@@ -803,5 +805,85 @@ export async function updateLeavePolicy(policyData, adminUser = 'Admin') {
   }
 
   return getLeavePolicy();
+}
+
+/**
+ * Atomic Upsert for Salary Structure by employee_id (PostgreSQL ON CONFLICT)
+ */
+export async function upsertSalaryStructure(updatedData) {
+  const employee_id = updatedData.employee_id;
+  const now = new Date().toISOString();
+
+  if (isConnected && pgPool) {
+    try {
+      const query = `
+        INSERT INTO salary_structures (
+          id, employee_id, employee_name, department, designation,
+          monthly_salary, bank_name, account_number, ifsc_code, upi_id, pan_number,
+          updated_at, updated_by
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ON CONFLICT (employee_id) DO UPDATE SET
+          employee_name = EXCLUDED.employee_name,
+          department = EXCLUDED.department,
+          designation = EXCLUDED.designation,
+          monthly_salary = EXCLUDED.monthly_salary,
+          bank_name = EXCLUDED.bank_name,
+          account_number = EXCLUDED.account_number,
+          ifsc_code = EXCLUDED.ifsc_code,
+          upi_id = EXCLUDED.upi_id,
+          pan_number = EXCLUDED.pan_number,
+          updated_at = EXCLUDED.updated_at,
+          updated_by = EXCLUDED.updated_by
+        RETURNING *;
+      `;
+      const values = [
+        updatedData.id || `SAL-${employee_id}`,
+        employee_id,
+        updatedData.employee_name || '',
+        updatedData.department || '',
+        updatedData.designation || '',
+        parseFloat(updatedData.monthly_salary) || 0,
+        updatedData.bank_name || '',
+        updatedData.account_number || '',
+        updatedData.ifsc_code || '',
+        updatedData.upi_id || '',
+        updatedData.pan_number || '',
+        updatedData.updated_at || now,
+        updatedData.updated_by || 'Admin'
+      ];
+      const res = await pgPool.query(query, values);
+      invalidateCache('Salary_Structures');
+      invalidateCache('Monthly_Payrolls');
+
+      const saved = res.rows[0];
+      const clean = {};
+      for (const [k, v] of Object.entries(saved)) {
+        clean[k] = v === null || v === undefined ? '' : (k === 'monthly_salary' ? parseFloat(v) || 0 : String(v));
+      }
+      return clean;
+    } catch (err) {
+      console.error('[PostgreSQL] Error in upsertSalaryStructure:', err.message);
+      throw err;
+    }
+  }
+
+  // In-Memory Fallback
+  if (!memoryDB.Salary_Structures) memoryDB.Salary_Structures = [];
+  const idx = memoryDB.Salary_Structures.findIndex(s => s.employee_id === employee_id);
+  const cleanData = {
+    ...updatedData,
+    id: updatedData.id || `SAL-${employee_id}`,
+    monthly_salary: parseFloat(updatedData.monthly_salary) || 0,
+    updated_at: updatedData.updated_at || now
+  };
+
+  if (idx !== -1) {
+    memoryDB.Salary_Structures[idx] = { ...memoryDB.Salary_Structures[idx], ...cleanData };
+  } else {
+    memoryDB.Salary_Structures.push(cleanData);
+  }
+  invalidateCache('Salary_Structures');
+  invalidateCache('Monthly_Payrolls');
+  return cleanData;
 }
 

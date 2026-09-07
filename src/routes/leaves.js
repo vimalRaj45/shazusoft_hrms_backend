@@ -3,7 +3,7 @@ import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendProfessionalRejectionEmail } from '../mailer.js';
 import { differenceInCalendarDays, parseISO, format } from 'date-fns';
 import { sendPushNotification } from '../pushService.js';
-import { dispatchNotification } from '../inAppNotificationService.js';
+import { dispatchNotification, sendSseEvent } from '../inAppNotificationService.js';
 import { getCurrentMonthStr } from '../utils/dateTime.js';
 
 export default async function leaveRoutes(fastify, options) {
@@ -352,6 +352,15 @@ export default async function leaveRoutes(fastify, options) {
       isCrud: true
     }).catch(() => {});
 
+    // Broadcast real-time SSE event to ALL online users / tabs
+    sendSseEvent('ALL', 'data_update', {
+      type: 'leave_updated',
+      leave_id: id,
+      employee_id: existing.employee_id,
+      status,
+      leave: updated
+    });
+
     return {
       message: `Leave request ${status.toLowerCase()} successfully.`,
       leave: updated
@@ -433,6 +442,15 @@ export default async function leaveRoutes(fastify, options) {
       senderRole: request.user?.role || 'admin',
       isCrud: true
     }).catch(() => {});
+
+    // Broadcast real-time SSE event to ALL online users / tabs
+    sendSseEvent('ALL', 'data_update', {
+      type: 'permission_updated',
+      permission_id: id,
+      employee_id: existing.employee_id,
+      status,
+      permission: updated
+    });
 
     return {
       message: `Permission request ${status.toLowerCase()} successfully.`,

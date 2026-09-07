@@ -1,6 +1,6 @@
-import { getRows, addRow, updateRow } from '../db.js';
+import { getRows, addRow, updateRow, upsertSalaryStructure } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
-import { dispatchNotification } from '../inAppNotificationService.js';
+import { dispatchNotification, sendSseEvent } from '../inAppNotificationService.js';
 
 /**
  * Calculates working days in a given month (YYYY-MM)
@@ -234,18 +234,15 @@ export default async function payrollRoutes(fastify, options) {
     const { employee_id } = request.params;
     const body = request.body || {};
     const employees = await getRows('Employees');
-    const emp = employees.find(e => e.id === employee_id);
+    const emp = employees.find(e => e.id?.toLowerCase() === employee_id?.toLowerCase());
 
     if (!emp) {
       return reply.status(404).send({ error: 'Employee not found' });
     }
 
-    const structures = await getRows('Salary_Structures');
-    const existing = structures.find(s => s.employee_id === employee_id);
-
     const now = new Date().toISOString();
     const updatedData = {
-      id: existing ? existing.id : `SAL-${employee_id}`,
+      id: `SAL-${emp.id}`,
       employee_id: emp.id,
       employee_name: emp.name,
       department: emp.department || '',
@@ -260,13 +257,31 @@ export default async function payrollRoutes(fastify, options) {
       updated_by: request.user?.name || 'Admin'
     };
 
-    if (existing) {
-      await updateRow('Salary_Structures', 'employee_id', employee_id, updatedData);
-    } else {
-      await addRow('Salary_Structures', updatedData);
+    const saved = await upsertSalaryStructure(updatedData);
+
+    // Auto-update any current pending month record in Monthly_Payrolls if exists
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const payrolls = await getRows('Monthly_Payrolls');
+      const pendingRecord = payrolls.find(p => p.payroll_month === currentMonth && p.employee_id === emp.id && p.status !== 'Paid');
+      if (pendingRecord) {
+        await updateRow('Monthly_Payrolls', 'id', pendingRecord.id, {
+          monthly_salary: updatedData.monthly_salary
+        });
+      }
+    } catch (e) {
+      // Non-blocking
     }
 
-    return reply.send({ success: true, salary_structure: updatedData });
+    // Broadcast real-time SSE event to ALL online users / tabs
+    sendSseEvent('ALL', 'data_update', {
+      type: 'salary_structure_updated',
+      employee_id: emp.id,
+      monthly_salary: updatedData.monthly_salary,
+      salary_structure: saved || updatedData
+    });
+
+    return reply.send({ success: true, salary_structure: saved || updatedData });
   });
 
   // 4. POST Calculate Month (Preview before committing) (Admin only)

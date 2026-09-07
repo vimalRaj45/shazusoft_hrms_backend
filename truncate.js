@@ -72,7 +72,8 @@ async function truncateDatabase() {
     const tablesToTruncate = [
       { name: 'attendance', label: 'Attendance Punches' },
       { name: 'breaks', label: 'Break Logs' },
-      { name: 'work_done', label: 'Daily Work Done Tasks' },
+      { name: 'workdone', label: 'Daily Work Done Tasks' },
+      { name: 'work_done', label: 'Daily Work Done Tasks (Legacy)' },
       { name: 'leaves', label: 'Leave Applications' },
       { name: 'permissions', label: '2-Hour Permission Passes' },
       { name: 'self_evaluations', label: 'Monthly Self-Evaluations' },
@@ -84,7 +85,10 @@ async function truncateDatabase() {
       { name: 'support_tickets', label: 'Helpdesk Support Tickets' },
       { name: 'ticket_messages', label: 'Ticket Messages & Attachments' },
       { name: 'broadcasts', label: 'Announcement Broadcasts' },
-      { name: 'push_subscriptions', label: 'Web Push Subscriptions' }
+      { name: 'push_subscriptions', label: 'Web Push Subscriptions' },
+      { name: 'salary_structures', label: 'Salary Structures & Packages' },
+      { name: 'monthly_payrolls', label: 'Monthly Payroll Generations' },
+      { name: 'in_app_notifications', label: 'In-App Notifications & Alerts' }
     ];
 
     console.log('\n🧹 Purging transactional tables...');

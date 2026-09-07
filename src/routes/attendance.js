@@ -3,6 +3,7 @@ import { verifyAuth, verifyAdmin } from '../auth.js';
 import { verifyGeofence } from '../geofence.js';
 import { runtimeSettings } from '../config.js';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
+import { sendSseEvent } from '../inAppNotificationService.js';
 import {
   getTodayDateStr,
   getCurrentMonthStr,
@@ -137,6 +138,16 @@ export default async function attendanceRoutes(fastify, options) {
     };
 
     const saved = await addRow('Attendance', newRecord);
+
+    // Broadcast real-time SSE event to ALL online users / tabs
+    sendSseEvent('ALL', 'data_update', {
+      type: 'attendance_updated',
+      action: 'punch_in',
+      employee_id: request.user.id,
+      employee_name: request.user.name,
+      attendance: saved
+    });
+
     return {
       message: `Punch In successful (${status}${isWfh ? ' • WFH Mode' : ''})!`,
       attendance: saved,
@@ -198,6 +209,15 @@ export default async function attendanceRoutes(fastify, options) {
       net_hours: netHours,
       punch_out_lat: lat ? String(lat) : (isWfh ? 'WFH_REMOTE' : ''),
       punch_out_lng: lng ? String(lng) : (isWfh ? 'WFH_REMOTE' : '')
+    });
+
+    // Broadcast real-time SSE event to ALL online users / tabs
+    sendSseEvent('ALL', 'data_update', {
+      type: 'attendance_updated',
+      action: 'punch_out',
+      employee_id: request.user.id,
+      employee_name: request.user.name,
+      attendance: updated
     });
 
     return {

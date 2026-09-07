@@ -90,4 +90,15 @@ async function start() {
   }
 }
 
-start();
+export { buildServer, start };
+
+const isDirectRun = process.argv[1] && (
+  process.argv[1].endsWith('server.js') ||
+  process.argv[1].endsWith('server')
+);
+
+if (isDirectRun) {
+  start();
+}
+
+
