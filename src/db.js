@@ -25,10 +25,21 @@ const TABLE_MAP = {
   Leave_Policies: 'leave_policies',
   Salary_Structures: 'salary_structures',
   Monthly_Payrolls: 'monthly_payrolls',
-  In_App_Notifications: 'in_app_notifications'
+  In_App_Notifications: 'in_app_notifications',
+  Memos: 'memos',
+  Memo_Acknowledgments: 'memo_acknowledgments'
 };
 
 const TABLE_HEADERS = {
+  Memos: [
+    'id', 'memo_number', 'title', 'category', 'priority', 'target_type',
+    'target_employee_id', 'target_employee_name', 'target_department',
+    'content', 'issued_by_id', 'issued_by_name', 'issued_date', 'effective_date',
+    'requires_acknowledgment', 'attachment_url', 'status', 'created_at', 'updated_at'
+  ],
+  Memo_Acknowledgments: [
+    'id', 'memo_id', 'employee_id', 'employee_name', 'status', 'acknowledged_at', 'remarks'
+  ],
   In_App_Notifications: [
     'id', 'user_id', 'title', 'message', 'type', 'target_tab', 'target_url', 'is_read', 'created_at'
   ],
@@ -114,7 +125,9 @@ const memoryDB = {
   Leave_Policies: [],
   Salary_Structures: [],
   Monthly_Payrolls: [],
-  In_App_Notifications: []
+  In_App_Notifications: [],
+  Memos: [],
+  Memo_Acknowledgments: []
 };
 
 // 15-second cache for high-speed read operations
@@ -458,7 +471,40 @@ async function initTables() {
       is_read BOOLEAN DEFAULT FALSE,
       created_at TEXT
     );`,
-    `CREATE INDEX IF NOT EXISTS idx_in_app_notif_user ON in_app_notifications (user_id, is_read);`
+    `CREATE INDEX IF NOT EXISTS idx_in_app_notif_user ON in_app_notifications (user_id, is_read);`,
+    `CREATE TABLE IF NOT EXISTS memos (
+      id VARCHAR(100) PRIMARY KEY,
+      memo_number VARCHAR(100) UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      category VARCHAR(50) DEFAULT 'General',
+      priority VARCHAR(20) DEFAULT 'Normal',
+      target_type VARCHAR(20) NOT NULL DEFAULT 'ALL',
+      target_employee_id VARCHAR(50),
+      target_employee_name TEXT,
+      target_department TEXT,
+      content TEXT NOT NULL,
+      issued_by_id VARCHAR(50) NOT NULL,
+      issued_by_name TEXT NOT NULL,
+      issued_date TEXT NOT NULL,
+      effective_date TEXT,
+      requires_acknowledgment BOOLEAN DEFAULT TRUE,
+      attachment_url TEXT,
+      status VARCHAR(20) DEFAULT 'Active',
+      created_at TEXT,
+      updated_at TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS memo_acknowledgments (
+      id VARCHAR(100) PRIMARY KEY,
+      memo_id VARCHAR(100) NOT NULL,
+      employee_id VARCHAR(50) NOT NULL,
+      employee_name TEXT NOT NULL,
+      status VARCHAR(20) DEFAULT 'Acknowledged',
+      acknowledged_at TEXT NOT NULL,
+      remarks TEXT,
+      UNIQUE(memo_id, employee_id)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_memos_target ON memos (target_type, target_employee_id, target_department);`,
+    `CREATE INDEX IF NOT EXISTS idx_memo_ack ON memo_acknowledgments (memo_id, employee_id);`
   ];
 
   for (const q of queries) {
