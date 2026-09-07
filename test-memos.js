@@ -174,13 +174,22 @@ async function runMemoTests() {
     }
     console.log('✅ TEST 5 PASSED: Admin live signature compliance tracking verified.');
 
-    // Cleanup test record
-    await fastify.inject({
+    // TEST 6: Admin deletes memo and acknowledgments are cleaned up
+    console.log('\n--- TEST 6: Admin Deletion of Memo ---');
+    const deleteRes = await fastify.inject({
       method: 'DELETE',
       url: `/api/memos/${createdMemoId}`,
       headers: { authorization: `Bearer ${adminToken}` }
     });
-    console.log('\n🧹 Test memo cleaned up successfully.');
+    console.log('Delete status:', deleteRes.statusCode, deleteRes.body);
+    if (deleteRes.statusCode !== 200) {
+      throw new Error(`Memo deletion failed with HTTP ${deleteRes.statusCode}: ${deleteRes.body}`);
+    }
+    const deleteBody = JSON.parse(deleteRes.body);
+    if (!deleteBody.success) {
+      throw new Error('Delete returned success: false');
+    }
+    console.log('✅ TEST 6 PASSED: Memo permanently deleted successfully.');
 
     console.log('\n🎉 ALL 5 OFFICIAL MEMO TESTS PASSED WITH 100% SUCCESS!\n');
     process.exit(0);

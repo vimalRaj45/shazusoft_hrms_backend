@@ -318,7 +318,7 @@ export default async function memosRoutes(fastify, opts) {
       updates.id = existing.id;
       updates.memo_number = existing.memo_number;
 
-      await updateRow('Memos', id, updates);
+      await updateRow('Memos', 'id', id, updates);
       return { success: true, message: 'Memo updated successfully', memo: updates };
     } catch (err) {
       req.log.error(err);
@@ -330,14 +330,16 @@ export default async function memosRoutes(fastify, opts) {
   fastify.delete('/:id', { preHandler: verifyAdmin }, async (req, reply) => {
     try {
       const { id } = req.params;
-      await deleteRow('Memos', id);
 
       // Clean up any acknowledgment records for this memo
       const acks = await getRows('Memo_Acknowledgments');
       const relatedAcks = acks.filter(a => a.memo_id === id);
       for (const ack of relatedAcks) {
-        await deleteRow('Memo_Acknowledgments', ack.id);
+        await deleteRow('Memo_Acknowledgments', 'id', ack.id);
       }
+
+      // Delete the memo
+      await deleteRow('Memos', 'id', id);
 
       return { success: true, message: 'Memo deleted successfully' };
     } catch (err) {
