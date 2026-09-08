@@ -4,6 +4,13 @@
   "late_grace_time": "09:45",
   "half_day_hours": 4.5,
   "full_day_hours": 8.5,
-  "updated_at": "2026-09-06T17:23:07.675Z",
-  "updated_by": "Vimal Raj"
+  "avg_daily_hours": 8.5,
+  "intern_opening_time": "10:00",
+  "intern_closing_time": "16:30",
+  "intern_late_grace_time": "10:15",
+  "intern_half_day_hours": 3.0,
+  "intern_full_day_hours": 6.0,
+  "intern_avg_daily_hours": 6.0,
+  "updated_at": "2026-09-08T14:15:00.000Z",
+  "updated_by": "System Admin"
 }

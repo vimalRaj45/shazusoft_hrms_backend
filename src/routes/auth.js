@@ -139,7 +139,8 @@ export default async function authRoutes(fastify, options) {
       role: user.role,
       department: user.department,
       designation: user.designation,
-      work_mode: user.work_mode || 'office'
+      work_mode: user.work_mode || 'office',
+      employment_type: user.employment_type || 'full_time'
     });
 
     return {
@@ -151,7 +152,8 @@ export default async function authRoutes(fastify, options) {
         role: user.role,
         department: user.department,
         designation: user.designation,
-        work_mode: user.work_mode || 'office'
+        work_mode: user.work_mode || 'office',
+        employment_type: user.employment_type || 'full_time'
       }
     };
   });

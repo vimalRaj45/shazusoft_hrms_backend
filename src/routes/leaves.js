@@ -187,7 +187,16 @@ export default async function leaveRoutes(fastify, options) {
       getLeavePolicy(),
       getRows('Permissions')
     ]);
+
     const monthlyLimit = policy.monthly_permission_limit || 2;
+    const maxPermHours = policy.max_permission_hours || 2;
+
+    if (parseFloat(duration_hours) > maxPermHours) {
+      return reply.status(400).send({
+        error: `Permission duration (${duration_hours} hrs) exceeds the allowed limit of ${maxPermHours} hours.`
+      });
+    }
+
     const thisMonthPerms = allPermissions.filter(
       p => p.employee_id === request.user.id && p.date?.startsWith(currentMonth) && p.status !== 'Rejected'
     );

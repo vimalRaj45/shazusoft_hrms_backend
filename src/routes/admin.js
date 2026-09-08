@@ -2,7 +2,7 @@ import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updat
 import { verifyAdmin, hashPassword } from '../auth.js';
 import { runtimeSettings, saveOfficeTimings } from '../config.js';
 import { format } from 'date-fns';
-import { formatTime12h, getTodayDateStr } from '../utils/dateTime.js';
+import { formatTime12h, timeTo24h, getTodayDateStr } from '../utils/dateTime.js';
 import { sendInvitationEmail } from '../mailer.js';
 
 export default async function adminRoutes(fastify, options) {
@@ -84,7 +84,15 @@ export default async function adminRoutes(fastify, options) {
 
   // Create new employee (OTP Auth enabled - password not needed)
   fastify.post('/employees', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { name, email, role = 'employee', department = 'General', designation = 'Staff', work_mode = 'office' } = request.body || {};
+    const {
+      name,
+      email,
+      role = 'employee',
+      department = 'General',
+      designation = 'Staff',
+      work_mode = 'office',
+      employment_type = 'full_time'
+    } = request.body || {};
 
     if (!name?.trim() || !email?.trim()) {
       return reply.status(400).send({ error: 'Name and email are required.' });
@@ -98,26 +106,46 @@ export default async function adminRoutes(fastify, options) {
       return reply.status(400).send({ error: 'An employee with this email already exists.' });
     }
 
+    const isIntern = String(employment_type || '').toLowerCase() === 'internship';
+    const finalEmploymentType = isIntern ? 'internship' : 'full_time';
+
     // Robust Collision-Free ID Generation (uses provided unique ID if supplied)
     let candidateId = (request.body?.id && !rows.some(r => r.id?.toLowerCase() === request.body.id.trim().toLowerCase()))
       ? request.body.id.trim()
       : null;
 
     if (!candidateId) {
-      let maxNum = 0;
-      rows.forEach(r => {
-        const match = r.id?.match(/^EMP-(?:STAFF-)?(\d+)$/i);
-        if (match) {
-          const num = parseInt(match[1], 10);
-          if (num > maxNum) maxNum = num;
+      if (isIntern) {
+        let maxInternNum = 0;
+        rows.forEach(r => {
+          const match = r.id?.match(/^INT-(\d+)$/i);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxInternNum) maxInternNum = num;
+          }
+        });
+        let nextNum = maxInternNum + 1;
+        candidateId = `INT-${String(nextNum).padStart(3, '0')}`;
+        while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
+          nextNum++;
+          candidateId = `INT-${String(nextNum).padStart(3, '0')}`;
         }
-      });
+      } else {
+        let maxNum = 0;
+        rows.forEach(r => {
+          const match = r.id?.match(/^EMP-(?:STAFF-)?(\d+)$/i);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (num > maxNum) maxNum = num;
+          }
+        });
 
-      let nextNum = Math.max(maxNum + 1, rows.length + 1);
-      candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
-      while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
-        nextNum++;
+        let nextNum = Math.max(maxNum + 1, rows.length + 1);
         candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
+        while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
+          nextNum++;
+          candidateId = `EMP-${String(nextNum).padStart(3, '0')}`;
+        }
       }
     }
 
@@ -128,8 +156,9 @@ export default async function adminRoutes(fastify, options) {
       password_hash: 'OTP_AUTH_ENABLED',
       role: role === 'admin' ? 'admin' : 'employee',
       department: department?.trim() || 'General',
-      designation: designation?.trim() || 'Staff',
+      designation: designation?.trim() || (isIntern ? 'Software Intern' : 'Staff'),
       work_mode: work_mode === 'wfh' ? 'wfh' : 'office',
+      employment_type: finalEmploymentType,
       status: 'active',
       profile_completeness: 0,
       documents_frozen: false,
@@ -146,6 +175,7 @@ export default async function adminRoutes(fastify, options) {
         employeeName: clean.name,
         employeeId: clean.id,
         role: clean.role,
+        employmentType: clean.employment_type,
         department: clean.department,
         designation: clean.designation,
         workMode: clean.work_mode,
@@ -168,7 +198,7 @@ export default async function adminRoutes(fastify, options) {
   // Update employee
   fastify.put('/employees/:id', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { id } = request.params;
-    const { name, email, role, department, designation, status, password, work_mode } = request.body || {};
+    const { name, email, role, department, designation, status, password, work_mode, employment_type } = request.body || {};
 
     const updateData = {};
     if (name) updateData.name = name;
@@ -178,6 +208,7 @@ export default async function adminRoutes(fastify, options) {
     if (designation) updateData.designation = designation;
     if (status) updateData.status = status;
     if (work_mode) updateData.work_mode = work_mode === 'wfh' ? 'wfh' : 'office';
+    if (employment_type) updateData.employment_type = employment_type === 'internship' ? 'internship' : 'full_time';
     if (password) updateData.password_hash = hashPassword(password);
 
     const updated = await updateRow('Employees', 'id', id, updateData);
@@ -203,6 +234,52 @@ export default async function adminRoutes(fastify, options) {
     const { password_hash, ...clean } = updated;
     return {
       message: `Work mode updated to ${targetMode === 'wfh' ? 'Work From Home (WFH)' : 'In-Office'} for ${clean.name}.`,
+      employee: clean
+    };
+  });
+
+  // 1-Click Instant Conversion: Internship <-> Full-Time Staff
+  fastify.patch('/employees/:id/employment-type', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const { employment_type, designation } = request.body || {};
+
+    const rows = await getRows('Employees');
+    const existing = rows.find(e => e.id?.toLowerCase() === id?.toLowerCase());
+    if (!existing) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    const isCurrentIntern = existing.employment_type === 'internship';
+    const targetType = employment_type
+      ? (employment_type === 'internship' ? 'internship' : 'full_time')
+      : (isCurrentIntern ? 'full_time' : 'internship');
+
+    const updateData = {
+      employment_type: targetType
+    };
+
+    if (designation) {
+      updateData.designation = designation.trim();
+    } else if (targetType === 'full_time' && /intern/i.test(existing.designation || '')) {
+      // Auto-promote title: e.g. "Software Intern" -> "Software Developer"
+      updateData.designation = existing.designation.replace(/\s*Intern\b/i, ' Developer').trim() || 'Software Developer';
+    } else if (targetType === 'internship' && !/intern/i.test(existing.designation || '')) {
+      updateData.designation = `${existing.designation} Intern`;
+    }
+
+    const updated = await updateRow('Employees', 'id', existing.id, updateData);
+    const { password_hash, ...clean } = updated;
+
+    sendSseEvent('ALL', 'data_update', {
+      type: 'employee_updated',
+      employee_id: existing.id,
+      employee: clean
+    });
+
+    return {
+      message: targetType === 'full_time'
+        ? `🎉 Success: ${clean.name} has been promoted to Full-Time Staff!`
+        : `Status updated: ${clean.name} switched to Internship track.`,
       employee: clean
     };
   });
@@ -429,7 +506,13 @@ export default async function adminRoutes(fastify, options) {
 
   // PUT /api/admin/leave-policy — Update monthly leave policy
   fastify.put('/leave-policy', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { casual_leave, sick_leave, paid_leave, monthly_permission_limit, max_permission_hours } = request.body || {};
+    const {
+      casual_leave,
+      sick_leave,
+      paid_leave,
+      monthly_permission_limit,
+      max_permission_hours
+    } = request.body || {};
 
     if (casual_leave !== undefined && (isNaN(casual_leave) || Number(casual_leave) < 0)) {
       return reply.status(400).send({ error: 'Casual Leave quota must be a valid non-negative number.' });
@@ -451,36 +534,45 @@ export default async function adminRoutes(fastify, options) {
     };
   });
 
-  // GET /api/admin/office-timings — Get dynamic office shift opening, closing & grace times
+  // GET /api/admin/office-timings — Get dynamic office shift opening, closing, grace times & working hour targets
   fastify.get('/office-timings', { preHandler: [verifyAdmin] }, async (request, reply) => {
     return {
       timings: {
+        // Staff timings
         opening_time: runtimeSettings.officeOpeningTime || '09:30',
         closing_time: runtimeSettings.officeClosingTime || '18:30',
         late_grace_time: runtimeSettings.officeLateGraceTime || '09:45',
         half_day_hours: runtimeSettings.halfDayHours || 4.5,
-        full_day_hours: runtimeSettings.fullDayHours || 8.5
+        full_day_hours: runtimeSettings.fullDayHours || 8.5,
+        avg_daily_hours: runtimeSettings.avgDailyHours || 8.5,
+        // Intern timings & lighter target hours
+        intern_opening_time: runtimeSettings.internOpeningTime || '10:00',
+        intern_closing_time: runtimeSettings.internClosingTime || '16:30',
+        intern_late_grace_time: runtimeSettings.internLateGraceTime || '10:15',
+        intern_half_day_hours: runtimeSettings.internHalfDayHours || 3.0,
+        intern_full_day_hours: runtimeSettings.internFullDayHours || 6.0,
+        intern_avg_daily_hours: runtimeSettings.internAvgDailyHours || 6.0
       }
     };
   });
 
   // PUT /api/admin/office-timings — Update dynamic office shift opening, closing & grace times
   fastify.put('/office-timings', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { opening_time, closing_time, late_grace_time } = request.body || {};
+    const body = request.body || {};
 
-    if (opening_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(opening_time)) {
-      return reply.status(400).send({ error: 'Opening time must be in HH:mm format (e.g. 09:30).' });
-    }
-    if (closing_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(closing_time)) {
-      return reply.status(400).send({ error: 'Closing time must be in HH:mm format (e.g. 18:30).' });
-    }
-    if (late_grace_time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(late_grace_time)) {
-      return reply.status(400).send({ error: 'Late grace cutoff must be in HH:mm format (e.g. 09:45).' });
-    }
+    const normalizedBody = {
+      ...body,
+      opening_time: body.opening_time ? timeTo24h(body.opening_time) : undefined,
+      closing_time: body.closing_time ? timeTo24h(body.closing_time) : undefined,
+      late_grace_time: body.late_grace_time ? timeTo24h(body.late_grace_time) : undefined,
+      intern_opening_time: body.intern_opening_time ? timeTo24h(body.intern_opening_time) : undefined,
+      intern_closing_time: body.intern_closing_time ? timeTo24h(body.intern_closing_time) : undefined,
+      intern_late_grace_time: body.intern_late_grace_time ? timeTo24h(body.intern_late_grace_time) : undefined
+    };
 
-    const updated = saveOfficeTimings(request.body, request.user.name);
+    const updated = saveOfficeTimings(normalizedBody, request.user.name);
     return {
-      message: 'Office opening, closing & late grace timings updated successfully.',
+      message: 'Office shift hours & intern working hours policy updated successfully.',
       timings: updated
     };
   });

@@ -304,6 +304,7 @@ export async function sendProfessionalRejectionEmail({
  * @param {string} params.employeeName
  * @param {string} params.employeeId
  * @param {string} [params.role]
+ * @param {string} [params.employmentType]
  * @param {string} [params.department]
  * @param {string} [params.designation]
  * @param {string} [params.workMode]
@@ -311,9 +312,10 @@ export async function sendProfessionalRejectionEmail({
  */
 export async function sendInvitationEmail({
   toEmail,
-  employeeName = 'Team Member',
+  employeeName,
   employeeId,
   role = 'employee',
+  employmentType = 'full_time',
   department = 'General',
   designation = 'Staff',
   workMode = 'office',
@@ -326,10 +328,14 @@ export async function sendInvitationEmail({
     });
     const sendApi = new SendApi(configuration);
 
-    const subject = `Welcome to Shazu Soft Technologies — HRMS Portal Access (${employeeId})`;
+    const isIntern = String(employmentType || '').toLowerCase() === 'internship';
+    const empTypeLabel = isIntern ? 'Internship / Trainee (Learning Track)' : 'Full-Time Staff (Regular)';
+    const subject = isIntern
+      ? `Welcome to Shazu Soft Technologies — Internship HRMS Portal Access (${employeeId})`
+      : `Welcome to Shazu Soft Technologies — HRMS Portal Access (${employeeId})`;
     const workModeLabel = workMode === 'wfh' ? 'Work From Home (Remote)' : 'In-Office (GPS Perimeter)';
 
-    const plainText = `Dear ${employeeName},\n\nWelcome to Shazu Soft Technologies. Your employee account has been created in the Shazu Soft HRMS portal.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Official Email: ${toEmail}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Employee'}\n- Work Mode: ${workModeLabel}\n\nPortal Authentication Instructions:\n1. Navigate to: ${portalUrl}\n2. Enter your registered email address (${toEmail}).\n3. Click "Send Verification Code" to receive your 6-digit one-time passcode via email.\n4. Enter the code to access your workspace.\n\nRegards,\nHuman Resources Administration\nShazu Soft Technologies`;
+    const plainText = `Dear ${employeeName},\n\nWelcome to Shazu Soft Technologies. Your ${isIntern ? 'internship' : 'employee'} account has been created in the Shazu Soft HRMS portal.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Official Email: ${toEmail}\n- Category: ${empTypeLabel}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Employee'}\n- Work Mode: ${workModeLabel}\n\nPortal Authentication Instructions:\n1. Navigate to: ${portalUrl}\n2. Enter your registered email address (${toEmail}).\n3. Click "Send Verification Code" to receive your 6-digit one-time passcode via email.\n4. Enter the code to access your workspace.\n\nRegards,\nHuman Resources Administration\nShazu Soft Technologies`;
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -364,7 +370,9 @@ export async function sendInvitationEmail({
                 Dear ${employeeName},
               </p>
               <p style="font-size: 13.5px; color: #334155; line-height: 1.6; margin: 0 0 18px 0;">
-                Welcome to Shazu Soft Technologies. Your employee profile has been provisioned in the corporate HRMS portal. You may now access the system to view your daily attendance logs, timesheets, tasks, and leave balances.
+                ${isIntern
+                  ? 'Welcome to Shazu Soft Technologies! Your internship profile has been provisioned in our corporate HRMS portal. We are thrilled to have you join our learning and development track.'
+                  : 'Welcome to Shazu Soft Technologies. Your employee profile has been provisioned in the corporate HRMS portal. You may now access the system to view your daily attendance logs, timesheets, tasks, and leave balances.'}
               </p>
 
               <!-- Account Specifications Table -->
@@ -374,18 +382,26 @@ export async function sendInvitationEmail({
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 700;">${employeeId}</td>
                 </tr>
                 <tr>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Employment Type:</td>
+                  <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">
+                    <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; ${isIntern ? 'background-color: #f3e8ff; color: #7e22ce;' : 'background-color: #dcfce7; color: #15803d;'}">
+                      ${empTypeLabel}
+                    </span>
+                  </td>
+                </tr>
+                <tr style="background-color: #f8fafc;">
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Official Email:</td>
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${toEmail}</td>
                 </tr>
-                <tr style="background-color: #f8fafc;">
+                <tr>
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Department:</td>
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${department}</td>
                 </tr>
-                <tr>
+                <tr style="background-color: #f8fafc;">
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Designation:</td>
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a;">${designation}</td>
                 </tr>
-                <tr style="background-color: #f8fafc;">
+                <tr>
                   <td style="padding: 9px 14px; color: #64748b; font-weight: 600;">Work Mode:</td>
                   <td style="padding: 9px 14px; color: #0f172a;">${workModeLabel}</td>
                 </tr>

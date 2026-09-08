@@ -114,9 +114,15 @@ export default async function attendanceRoutes(fastify, options) {
       });
     }
 
-    // Determine if late using dynamic office shift settings (default 09:45 AM in business timezone)
+    // Determine if late using dynamic office shift settings
+    // Interns are evaluated against internLateGraceTime (default 10:15 AM)
+    // Staff are evaluated against officeLateGraceTime (default 09:45 AM)
+    const isIntern = request.user?.employment_type === 'internship';
+    const graceSetting = isIntern
+      ? (runtimeSettings.internLateGraceTime || '10:15')
+      : (runtimeSettings.officeLateGraceTime || '09:45');
     const { hour: busHour, minute: busMinute } = getBusinessHoursAndMinutes();
-    const [graceHour, graceMinute] = (runtimeSettings.officeLateGraceTime || '09:45')
+    const [graceHour, graceMinute] = graceSetting
       .split(':')
       .map(n => parseInt(n, 10));
     const isLate = busHour > graceHour || (busHour === graceHour && busMinute > graceMinute);
@@ -240,6 +246,40 @@ export default async function attendanceRoutes(fastify, options) {
     };
   });
 
+  // GET /api/attendance/office-timings — Office shift timings & target working hours tailored to caller
+  fastify.get('/office-timings', { preHandler: [verifyAuth] }, async (request, reply) => {
+    const isIntern = request.user?.employment_type === 'internship';
+    return {
+      employment_type: request.user?.employment_type || 'full_time',
+      timings: {
+        opening_time: isIntern ? (runtimeSettings.internOpeningTime || '10:00') : (runtimeSettings.officeOpeningTime || '09:30'),
+        closing_time: isIntern ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'),
+        late_grace_time: isIntern ? (runtimeSettings.internLateGraceTime || '10:15') : (runtimeSettings.officeLateGraceTime || '09:45'),
+        full_day_hours: isIntern ? (runtimeSettings.internFullDayHours || 6.0) : (runtimeSettings.fullDayHours || 8.5),
+        half_day_hours: isIntern ? (runtimeSettings.internHalfDayHours || 3.0) : (runtimeSettings.halfDayHours || 4.5),
+        avg_daily_hours: isIntern ? (runtimeSettings.internAvgDailyHours || 6.0) : (runtimeSettings.avgDailyHours || 8.5)
+      },
+      all_timings: {
+        staff: {
+          opening_time: runtimeSettings.officeOpeningTime || '09:30',
+          closing_time: runtimeSettings.officeClosingTime || '18:30',
+          late_grace_time: runtimeSettings.officeLateGraceTime || '09:45',
+          full_day_hours: runtimeSettings.fullDayHours || 8.5,
+          half_day_hours: runtimeSettings.halfDayHours || 4.5,
+          avg_daily_hours: runtimeSettings.avgDailyHours || 8.5
+        },
+        intern: {
+          opening_time: runtimeSettings.internOpeningTime || '10:00',
+          closing_time: runtimeSettings.internClosingTime || '16:30',
+          late_grace_time: runtimeSettings.internLateGraceTime || '10:15',
+          full_day_hours: runtimeSettings.internFullDayHours || 6.0,
+          half_day_hours: runtimeSettings.internHalfDayHours || 3.0,
+          avg_daily_hours: runtimeSettings.internAvgDailyHours || 6.0
+        }
+      }
+    };
+  });
+
   // GET /api/attendance/holidays — Public list of admin-defined holidays (accessible to all staff)
   fastify.get('/holidays', { preHandler: [verifyAuth] }, async (request, reply) => {
     const rows = await getRows('Holidays');
@@ -268,12 +308,28 @@ export default async function attendanceRoutes(fastify, options) {
     const startDate = new Date(targetYear, targetMonthNum - 1, 1);
     const lastDayOfMonth = new Date(targetYear, targetMonthNum, 0).getDate();
 
-    const [attendanceRows, leaveRows, holidayRows, workDoneRows] = await Promise.all([
+    const [attendanceRows, leaveRows, holidayRows, workDoneRows, employeeRows] = await Promise.all([
       getRows('Attendance'),
       getRows('Leaves'),
       getRows('Holidays'),
-      getRows('WorkDone')
+      getRows('WorkDone'),
+      getRows('Employees')
     ]);
+
+    const targetEmp = employeeRows.find(e => e.id === request.user.id || e.email === request.user.email) || request.user;
+    const isTargetIntern = Boolean(
+      targetEmp.employment_type === 'internship' ||
+      targetEmp.designation?.toLowerCase().includes('intern') ||
+      targetEmp.role === 'intern' ||
+      request.user.employment_type === 'internship' ||
+      request.user.designation?.toLowerCase().includes('intern')
+    );
+    const targetAvgHours = isTargetIntern
+      ? (runtimeSettings.internAvgDailyHours || 6.0)
+      : (runtimeSettings.avgDailyHours || runtimeSettings.fullDayHours || 8.5);
+    const requiredFullDayHours = isTargetIntern
+      ? (runtimeSettings.internFullDayHours || 6.0)
+      : (runtimeSettings.fullDayHours || 8.5);
 
     // Build a quick lookup set of holiday dates in this month
     const holidayMap = {};
@@ -499,6 +555,18 @@ export default async function attendanceRoutes(fastify, options) {
     };
 
     return {
+      employee: {
+        id: targetEmp.id || request.user.id,
+        name: targetEmp.name || request.user.name,
+        email: targetEmp.email || request.user.email,
+        department: targetEmp.department || request.user.department,
+        designation: targetEmp.designation || request.user.designation,
+        role: targetEmp.role || request.user.role,
+        employment_type: isTargetIntern ? 'internship' : (targetEmp.employment_type || 'full_time')
+      },
+      employment_type: isTargetIntern ? 'internship' : (targetEmp.employment_type || 'full_time'),
+      target_avg_hours_per_day: targetAvgHours,
+      required_full_day_hours: requiredFullDayHours,
       month: targetMonthStr,
       month_label: format(startDate, 'MMMM yyyy'),
       total_days: lastDayOfMonth,
@@ -538,9 +606,11 @@ export default async function attendanceRoutes(fastify, options) {
       getRows('WorkDone')
     ]);
 
-    // Find target employee
-    const targetEmpId = employee_id || employeeRows.find(e => e.role !== 'admin')?.id || employeeRows[0]?.id;
-    const targetEmp = employeeRows.find(e => e.id === targetEmpId || e.email === targetEmpId) || employeeRows[0] || null;
+    // Find target employee (default to the authenticated caller)
+    const targetEmpId = (request.user.role === 'admin' && employee_id)
+      ? employee_id
+      : (request.user?.id || employee_id || employeeRows[0]?.id);
+    const targetEmp = employeeRows.find(e => e.id === targetEmpId || e.email === targetEmpId) || employeeRows.find(e => e.id === request.user?.id) || employeeRows[0] || null;
 
     if (!targetEmp) {
       return reply.status(404).send({ error: 'Employee not found.' });
@@ -766,6 +836,14 @@ export default async function attendanceRoutes(fastify, options) {
       totalTaskHours
     };
 
+    const isTargetIntern = (targetEmp.employment_type === 'internship');
+    const targetAvgHours = isTargetIntern
+      ? (runtimeSettings.internAvgDailyHours || 6.0)
+      : (runtimeSettings.avgDailyHours || runtimeSettings.fullDayHours || 8.5);
+    const requiredFullDayHours = isTargetIntern
+      ? (runtimeSettings.internFullDayHours || 6.0)
+      : (runtimeSettings.fullDayHours || 8.5);
+
     return {
       employee: {
         id: targetEmp.id,
@@ -773,8 +851,12 @@ export default async function attendanceRoutes(fastify, options) {
         email: targetEmp.email,
         department: targetEmp.department,
         designation: targetEmp.designation,
-        role: targetEmp.role
+        role: targetEmp.role,
+        employment_type: targetEmp.employment_type || 'full_time'
       },
+      employment_type: targetEmp.employment_type || 'full_time',
+      target_avg_hours_per_day: targetAvgHours,
+      required_full_day_hours: requiredFullDayHours,
       month: targetMonthStr,
       month_label: format(startDate, 'MMMM yyyy'),
       total_days: lastDayOfMonth,

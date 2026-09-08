@@ -26,6 +26,7 @@ export async function verifyAuth(request, reply) {
         code: 'ACCOUNT_DEACTIVATED'
       });
     }
+    request.user.employment_type = emp.employment_type || 'full_time';
   }
 }
 
@@ -45,6 +46,7 @@ export async function verifyAdmin(request, reply) {
         code: 'ACCOUNT_DEACTIVATED'
       });
     }
+    request.user.employment_type = emp.employment_type || 'full_time';
     if (emp.role !== 'admin' && request.user.role !== 'admin') {
       return reply.status(403).send({ error: 'Forbidden: Admin access required' });
     }
