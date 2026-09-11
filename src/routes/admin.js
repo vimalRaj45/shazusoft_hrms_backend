@@ -106,8 +106,8 @@ export default async function adminRoutes(fastify, options) {
       return reply.status(400).send({ error: 'An employee with this email already exists.' });
     }
 
-    const isIntern = String(employment_type || '').toLowerCase() === 'internship';
-    const finalEmploymentType = isIntern ? 'internship' : 'full_time';
+    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(employment_type || '').toLowerCase());
+    const finalEmploymentType = isPartTime ? 'part_time' : 'full_time';
 
     // Robust Collision-Free ID Generation (uses provided unique ID if supplied)
     let candidateId = (request.body?.id && !rows.some(r => r.id?.toLowerCase() === request.body.id.trim().toLowerCase()))
@@ -115,20 +115,20 @@ export default async function adminRoutes(fastify, options) {
       : null;
 
     if (!candidateId) {
-      if (isIntern) {
-        let maxInternNum = 0;
+      if (isPartTime) {
+        let maxPTNum = 0;
         rows.forEach(r => {
-          const match = r.id?.match(/^INT-(\d+)$/i);
+          const match = r.id?.match(/^(?:PT|INT)-(\d+)$/i);
           if (match) {
             const num = parseInt(match[1], 10);
-            if (num > maxInternNum) maxInternNum = num;
+            if (num > maxPTNum) maxPTNum = num;
           }
         });
-        let nextNum = maxInternNum + 1;
-        candidateId = `INT-${String(nextNum).padStart(3, '0')}`;
+        let nextNum = maxPTNum + 1;
+        candidateId = `PT-${String(nextNum).padStart(3, '0')}`;
         while (rows.some(r => r.id?.toLowerCase() === candidateId.toLowerCase())) {
           nextNum++;
-          candidateId = `INT-${String(nextNum).padStart(3, '0')}`;
+          candidateId = `PT-${String(nextNum).padStart(3, '0')}`;
         }
       } else {
         let maxNum = 0;
@@ -156,7 +156,7 @@ export default async function adminRoutes(fastify, options) {
       password_hash: 'OTP_AUTH_ENABLED',
       role: role === 'admin' ? 'admin' : 'employee',
       department: department?.trim() || 'General',
-      designation: designation?.trim() || (isIntern ? 'Software Intern' : 'Staff'),
+      designation: designation?.trim() || (isPartTime ? 'Junior Developer (Part-Time)' : 'Staff'),
       work_mode: work_mode === 'wfh' ? 'wfh' : 'office',
       employment_type: finalEmploymentType,
       status: 'active',
@@ -208,7 +208,11 @@ export default async function adminRoutes(fastify, options) {
     if (designation) updateData.designation = designation;
     if (status) updateData.status = status;
     if (work_mode) updateData.work_mode = work_mode === 'wfh' ? 'wfh' : 'office';
-    if (employment_type) updateData.employment_type = employment_type === 'internship' ? 'internship' : 'full_time';
+    if (employment_type) {
+      updateData.employment_type = ['part_time', 'parttime', 'internship'].includes(String(employment_type).toLowerCase())
+        ? 'part_time'
+        : 'full_time';
+    }
     if (password) updateData.password_hash = hashPassword(password);
 
     const updated = await updateRow('Employees', 'id', id, updateData);
@@ -238,7 +242,7 @@ export default async function adminRoutes(fastify, options) {
     };
   });
 
-  // 1-Click Instant Conversion: Internship <-> Full-Time Staff
+  // 1-Click Instant Conversion: Part-Time <-> Full-Time Staff
   fastify.patch('/employees/:id/employment-type', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { id } = request.params;
     const { employment_type, designation } = request.body || {};
@@ -249,10 +253,10 @@ export default async function adminRoutes(fastify, options) {
       return reply.status(404).send({ error: 'Employee not found.' });
     }
 
-    const isCurrentIntern = existing.employment_type === 'internship';
+    const isCurrentPartTime = ['part_time', 'parttime', 'internship'].includes(String(existing.employment_type || '').toLowerCase());
     const targetType = employment_type
-      ? (employment_type === 'internship' ? 'internship' : 'full_time')
-      : (isCurrentIntern ? 'full_time' : 'internship');
+      ? (['part_time', 'parttime', 'internship'].includes(String(employment_type).toLowerCase()) ? 'part_time' : 'full_time')
+      : (isCurrentPartTime ? 'full_time' : 'part_time');
 
     const updateData = {
       employment_type: targetType
@@ -260,11 +264,15 @@ export default async function adminRoutes(fastify, options) {
 
     if (designation) {
       updateData.designation = designation.trim();
-    } else if (targetType === 'full_time' && /intern/i.test(existing.designation || '')) {
-      // Auto-promote title: e.g. "Software Intern" -> "Software Developer"
-      updateData.designation = existing.designation.replace(/\s*Intern\b/i, ' Developer').trim() || 'Software Developer';
-    } else if (targetType === 'internship' && !/intern/i.test(existing.designation || '')) {
-      updateData.designation = `${existing.designation} Intern`;
+    } else if (targetType === 'full_time' && (/(?:part-time|part\s*time|intern)/i.test(existing.designation || ''))) {
+      // Auto-promote title: e.g. "Junior Developer (Part-Time)" -> "Software Developer"
+      updateData.designation = existing.designation
+        .replace(/\s*\(Part-Time\)/i, '')
+        .replace(/\s*Part-Time\b/i, '')
+        .replace(/\s*Intern\b/i, ' Developer')
+        .trim() || 'Software Developer';
+    } else if (targetType === 'part_time' && !(/(?:part-time|part\s*time|intern)/i.test(existing.designation || ''))) {
+      updateData.designation = `${existing.designation} (Part-Time)`;
     }
 
     const updated = await updateRow('Employees', 'id', existing.id, updateData);
@@ -279,7 +287,7 @@ export default async function adminRoutes(fastify, options) {
     return {
       message: targetType === 'full_time'
         ? `🎉 Success: ${clean.name} has been promoted to Full-Time Staff!`
-        : `Status updated: ${clean.name} switched to Internship track.`,
+        : `Status updated: ${clean.name} switched to Part-Time track.`,
       employee: clean
     };
   });

@@ -115,11 +115,12 @@ export default async function attendanceRoutes(fastify, options) {
     }
 
     // Determine if late using dynamic office shift settings
-    // Interns are evaluated against internLateGraceTime (default 10:15 AM)
-    // Staff are evaluated against officeLateGraceTime (default 09:45 AM)
-    const isIntern = request.user?.employment_type === 'internship';
-    const graceSetting = isIntern
-      ? (runtimeSettings.internLateGraceTime || '10:15')
+    // Part-time staff are evaluated against partTimeLateGraceTime / internLateGraceTime (default 10:15 AM)
+    // Full-time staff are evaluated against officeLateGraceTime (default 09:45 AM)
+    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(request.user?.employment_type || '').toLowerCase()) ||
+      Boolean(request.user?.designation?.toLowerCase().includes('part-time') || request.user?.designation?.toLowerCase().includes('intern'));
+    const graceSetting = isPartTime
+      ? (runtimeSettings.partTimeLateGraceTime || runtimeSettings.internLateGraceTime || '10:15')
       : (runtimeSettings.officeLateGraceTime || '09:45');
     const { hour: busHour, minute: busMinute } = getBusinessHoursAndMinutes();
     const [graceHour, graceMinute] = graceSetting
@@ -248,16 +249,17 @@ export default async function attendanceRoutes(fastify, options) {
 
   // GET /api/attendance/office-timings — Office shift timings & target working hours tailored to caller
   fastify.get('/office-timings', { preHandler: [verifyAuth] }, async (request, reply) => {
-    const isIntern = request.user?.employment_type === 'internship';
+    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(request.user?.employment_type || '').toLowerCase()) ||
+      Boolean(request.user?.designation?.toLowerCase().includes('part-time') || request.user?.designation?.toLowerCase().includes('intern'));
     return {
       employment_type: request.user?.employment_type || 'full_time',
       timings: {
-        opening_time: isIntern ? (runtimeSettings.internOpeningTime || '10:00') : (runtimeSettings.officeOpeningTime || '09:30'),
-        closing_time: isIntern ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'),
-        late_grace_time: isIntern ? (runtimeSettings.internLateGraceTime || '10:15') : (runtimeSettings.officeLateGraceTime || '09:45'),
-        full_day_hours: isIntern ? (runtimeSettings.internFullDayHours || 6.0) : (runtimeSettings.fullDayHours || 8.5),
-        half_day_hours: isIntern ? (runtimeSettings.internHalfDayHours || 3.0) : (runtimeSettings.halfDayHours || 4.5),
-        avg_daily_hours: isIntern ? (runtimeSettings.internAvgDailyHours || 6.0) : (runtimeSettings.avgDailyHours || 8.5)
+        opening_time: isPartTime ? (runtimeSettings.internOpeningTime || '10:00') : (runtimeSettings.officeOpeningTime || '09:30'),
+        closing_time: isPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'),
+        late_grace_time: isPartTime ? (runtimeSettings.internLateGraceTime || '10:15') : (runtimeSettings.officeLateGraceTime || '09:45'),
+        full_day_hours: isPartTime ? (runtimeSettings.internFullDayHours || 6.0) : (runtimeSettings.fullDayHours || 8.5),
+        half_day_hours: isPartTime ? (runtimeSettings.internHalfDayHours || 3.0) : (runtimeSettings.halfDayHours || 4.5),
+        avg_daily_hours: isPartTime ? (runtimeSettings.internAvgDailyHours || 6.0) : (runtimeSettings.avgDailyHours || 8.5)
       },
       all_timings: {
         staff: {
@@ -267,6 +269,14 @@ export default async function attendanceRoutes(fastify, options) {
           full_day_hours: runtimeSettings.fullDayHours || 8.5,
           half_day_hours: runtimeSettings.halfDayHours || 4.5,
           avg_daily_hours: runtimeSettings.avgDailyHours || 8.5
+        },
+        part_time: {
+          opening_time: runtimeSettings.internOpeningTime || '10:00',
+          closing_time: runtimeSettings.internClosingTime || '16:30',
+          late_grace_time: runtimeSettings.internLateGraceTime || '10:15',
+          full_day_hours: runtimeSettings.internFullDayHours || 6.0,
+          half_day_hours: runtimeSettings.internHalfDayHours || 3.0,
+          avg_daily_hours: runtimeSettings.internAvgDailyHours || 6.0
         },
         intern: {
           opening_time: runtimeSettings.internOpeningTime || '10:00',
@@ -317,17 +327,19 @@ export default async function attendanceRoutes(fastify, options) {
     ]);
 
     const targetEmp = employeeRows.find(e => e.id === request.user.id || e.email === request.user.email) || request.user;
-    const isTargetIntern = Boolean(
-      targetEmp.employment_type === 'internship' ||
+    const isTargetPartTime = Boolean(
+      ['part_time', 'parttime', 'internship'].includes(String(targetEmp.employment_type || '').toLowerCase()) ||
+      targetEmp.designation?.toLowerCase().includes('part-time') ||
       targetEmp.designation?.toLowerCase().includes('intern') ||
       targetEmp.role === 'intern' ||
-      request.user.employment_type === 'internship' ||
+      ['part_time', 'parttime', 'internship'].includes(String(request.user.employment_type || '').toLowerCase()) ||
+      request.user.designation?.toLowerCase().includes('part-time') ||
       request.user.designation?.toLowerCase().includes('intern')
     );
-    const targetAvgHours = isTargetIntern
+    const targetAvgHours = isTargetPartTime
       ? (runtimeSettings.internAvgDailyHours || 6.0)
       : (runtimeSettings.avgDailyHours || runtimeSettings.fullDayHours || 8.5);
-    const requiredFullDayHours = isTargetIntern
+    const requiredFullDayHours = isTargetPartTime
       ? (runtimeSettings.internFullDayHours || 6.0)
       : (runtimeSettings.fullDayHours || 8.5);
 
@@ -562,9 +574,9 @@ export default async function attendanceRoutes(fastify, options) {
         department: targetEmp.department || request.user.department,
         designation: targetEmp.designation || request.user.designation,
         role: targetEmp.role || request.user.role,
-        employment_type: isTargetIntern ? 'internship' : (targetEmp.employment_type || 'full_time')
+        employment_type: isTargetPartTime ? 'part_time' : (targetEmp.employment_type || 'full_time')
       },
-      employment_type: isTargetIntern ? 'internship' : (targetEmp.employment_type || 'full_time'),
+      employment_type: isTargetPartTime ? 'part_time' : (targetEmp.employment_type || 'full_time'),
       target_avg_hours_per_day: targetAvgHours,
       required_full_day_hours: requiredFullDayHours,
       month: targetMonthStr,
@@ -836,11 +848,15 @@ export default async function attendanceRoutes(fastify, options) {
       totalTaskHours
     };
 
-    const isTargetIntern = (targetEmp.employment_type === 'internship');
-    const targetAvgHours = isTargetIntern
+    const isTargetPartTime = Boolean(
+      ['part_time', 'parttime', 'internship'].includes(String(targetEmp.employment_type || '').toLowerCase()) ||
+      targetEmp.designation?.toLowerCase().includes('part-time') ||
+      targetEmp.designation?.toLowerCase().includes('intern')
+    );
+    const targetAvgHours = isTargetPartTime
       ? (runtimeSettings.internAvgDailyHours || 6.0)
       : (runtimeSettings.avgDailyHours || runtimeSettings.fullDayHours || 8.5);
-    const requiredFullDayHours = isTargetIntern
+    const requiredFullDayHours = isTargetPartTime
       ? (runtimeSettings.internFullDayHours || 6.0)
       : (runtimeSettings.fullDayHours || 8.5);
 

@@ -328,14 +328,14 @@ export async function sendInvitationEmail({
     });
     const sendApi = new SendApi(configuration);
 
-    const isIntern = String(employmentType || '').toLowerCase() === 'internship';
-    const empTypeLabel = isIntern ? 'Internship / Trainee (Learning Track)' : 'Full-Time Staff (Regular)';
-    const subject = isIntern
-      ? `Welcome to Shazu Soft Technologies — Internship HRMS Portal Access (${employeeId})`
+    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(employmentType || '').toLowerCase());
+    const empTypeLabel = isPartTime ? 'Part-Time Staff (Flexible Track)' : 'Full-Time Staff (Regular)';
+    const subject = isPartTime
+      ? `Welcome to Shazu Soft Technologies — Part-Time Staff HRMS Portal Access (${employeeId})`
       : `Welcome to Shazu Soft Technologies — HRMS Portal Access (${employeeId})`;
     const workModeLabel = workMode === 'wfh' ? 'Work From Home (Remote)' : 'In-Office (GPS Perimeter)';
 
-    const plainText = `Dear ${employeeName},\n\nWelcome to Shazu Soft Technologies. Your ${isIntern ? 'internship' : 'employee'} account has been created in the Shazu Soft HRMS portal.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Official Email: ${toEmail}\n- Category: ${empTypeLabel}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Employee'}\n- Work Mode: ${workModeLabel}\n\nPortal Authentication Instructions:\n1. Navigate to: ${portalUrl}\n2. Enter your registered email address (${toEmail}).\n3. Click "Send Verification Code" to receive your 6-digit one-time passcode via email.\n4. Enter the code to access your workspace.\n\nRegards,\nHuman Resources Administration\nShazu Soft Technologies`;
+    const plainText = `Dear ${employeeName},\n\nWelcome to Shazu Soft Technologies. Your ${isPartTime ? 'part-time' : 'employee'} account has been created in the Shazu Soft HRMS portal.\n\nAccount Details:\n- Employee ID: ${employeeId}\n- Official Email: ${toEmail}\n- Category: ${empTypeLabel}\n- Department: ${department}\n- Designation: ${designation}\n- Role: ${role === 'admin' ? 'Administrator' : 'Employee'}\n- Work Mode: ${workModeLabel}\n\nPortal Authentication Instructions:\n1. Navigate to: ${portalUrl}\n2. Enter your registered email address (${toEmail}).\n3. Click "Send Verification Code" to receive your 6-digit one-time passcode via email.\n4. Enter the code to access your workspace.\n\nRegards,\nHuman Resources Administration\nShazu Soft Technologies`;
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -370,8 +370,8 @@ export async function sendInvitationEmail({
                 Dear ${employeeName},
               </p>
               <p style="font-size: 13.5px; color: #334155; line-height: 1.6; margin: 0 0 18px 0;">
-                ${isIntern
-                  ? 'Welcome to Shazu Soft Technologies! Your internship profile has been provisioned in our corporate HRMS portal. We are thrilled to have you join our learning and development track.'
+                ${isPartTime
+                  ? 'Welcome to Shazu Soft Technologies! Your part-time profile has been provisioned in our corporate HRMS portal. You may now access the system to view your shift timings, daily attendance logs, timesheets, and payroll disbursements.'
                   : 'Welcome to Shazu Soft Technologies. Your employee profile has been provisioned in the corporate HRMS portal. You may now access the system to view your daily attendance logs, timesheets, tasks, and leave balances.'}
               </p>
 
@@ -384,7 +384,7 @@ export async function sendInvitationEmail({
                 <tr>
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-weight: 600;">Employment Type:</td>
                   <td style="padding: 9px 14px; border-bottom: 1px solid #e2e8f0; color: #0f172a; font-weight: 600;">
-                    <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; ${isIntern ? 'background-color: #f3e8ff; color: #7e22ce;' : 'background-color: #dcfce7; color: #15803d;'}">
+                    <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; ${isPartTime ? 'background-color: #f3e8ff; color: #7e22ce;' : 'background-color: #dcfce7; color: #15803d;'}">
                       ${empTypeLabel}
                     </span>
                   </td>

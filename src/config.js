@@ -1,6 +1,30 @@
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dns from 'dns';
+
+try {
+  dns.setDefaultResultOrder?.('ipv4first');
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+  const origLookup = dns.lookup;
+  dns.lookup = (hostname, options, callback) => {
+    let cb = callback;
+    let opts = options;
+    if (typeof options === 'function') {
+      cb = options;
+      opts = {};
+    }
+    dns.resolve4(hostname, (err, addresses) => {
+      if (!err && addresses && addresses.length > 0) {
+        if (opts && opts.all) {
+          return cb(null, addresses.map(a => ({ address: a, family: 4 })));
+        }
+        return cb(null, addresses[0], 4);
+      }
+      origLookup(hostname, options, cb);
+    });
+  };
+} catch (e) {}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -61,13 +85,25 @@ export const runtimeSettings = {
   halfDayHours: parseFloat(savedTimings.half_day_hours) || 4.5,
   fullDayHours: parseFloat(savedTimings.full_day_hours) || 8.5,
   avgDailyHours: parseFloat(savedTimings.avg_daily_hours) || 8.5,
-  // Internship Trainees shift & working hours (Admin-configured lighter hours)
-  internOpeningTime: savedTimings.intern_opening_time || '10:00',
-  internClosingTime: savedTimings.intern_closing_time || '16:30',
-  internLateGraceTime: savedTimings.intern_late_grace_time || '10:15',
-  internHalfDayHours: parseFloat(savedTimings.intern_half_day_hours) || 3.0,
-  internFullDayHours: parseFloat(savedTimings.intern_full_day_hours) || 6.0,
-  internAvgDailyHours: parseFloat(savedTimings.intern_avg_daily_hours) || 6.0,
+  // Part-Time Staff shift & working hours (Admin-configured flexible / lighter hours)
+  internOpeningTime: savedTimings.part_time_opening_time || savedTimings.intern_opening_time || '10:00',
+  internClosingTime: savedTimings.part_time_closing_time || savedTimings.intern_closing_time || '16:30',
+  internLateGraceTime: savedTimings.part_time_late_grace_time || savedTimings.intern_late_grace_time || '10:15',
+  internHalfDayHours: parseFloat(savedTimings.part_time_half_day_hours || savedTimings.intern_half_day_hours) || 3.0,
+  internFullDayHours: parseFloat(savedTimings.part_time_full_day_hours || savedTimings.intern_full_day_hours) || 6.0,
+  internAvgDailyHours: parseFloat(savedTimings.part_time_avg_daily_hours || savedTimings.intern_avg_daily_hours) || 6.0,
+  get partTimeOpeningTime() { return this.internOpeningTime; },
+  set partTimeOpeningTime(v) { this.internOpeningTime = v; },
+  get partTimeClosingTime() { return this.internClosingTime; },
+  set partTimeClosingTime(v) { this.internClosingTime = v; },
+  get partTimeLateGraceTime() { return this.internLateGraceTime; },
+  set partTimeLateGraceTime(v) { this.internLateGraceTime = v; },
+  get partTimeHalfDayHours() { return this.internHalfDayHours; },
+  set partTimeHalfDayHours(v) { this.internHalfDayHours = v; },
+  get partTimeFullDayHours() { return this.internFullDayHours; },
+  set partTimeFullDayHours(v) { this.internFullDayHours = v; },
+  get partTimeAvgDailyHours() { return this.internAvgDailyHours; },
+  set partTimeAvgDailyHours(v) { this.internAvgDailyHours = v; },
   allowMockBypassInDev: false
 };
 
@@ -79,12 +115,23 @@ export function saveOfficeTimings(newTimings, updatedBy = 'Admin') {
   if (newTimings.full_day_hours !== undefined) runtimeSettings.fullDayHours = parseFloat(newTimings.full_day_hours) || 8.5;
   if (newTimings.avg_daily_hours !== undefined) runtimeSettings.avgDailyHours = parseFloat(newTimings.avg_daily_hours) || 8.5;
 
-  if (newTimings.intern_opening_time) runtimeSettings.internOpeningTime = newTimings.intern_opening_time;
-  if (newTimings.intern_closing_time) runtimeSettings.internClosingTime = newTimings.intern_closing_time;
-  if (newTimings.intern_late_grace_time) runtimeSettings.internLateGraceTime = newTimings.intern_late_grace_time;
-  if (newTimings.intern_half_day_hours !== undefined) runtimeSettings.internHalfDayHours = parseFloat(newTimings.intern_half_day_hours) || 3.0;
-  if (newTimings.intern_full_day_hours !== undefined) runtimeSettings.internFullDayHours = parseFloat(newTimings.intern_full_day_hours) || 6.0;
-  if (newTimings.intern_avg_daily_hours !== undefined) runtimeSettings.internAvgDailyHours = parseFloat(newTimings.intern_avg_daily_hours) || 6.0;
+  const ptOpening = newTimings.part_time_opening_time || newTimings.intern_opening_time;
+  if (ptOpening) runtimeSettings.internOpeningTime = ptOpening;
+
+  const ptClosing = newTimings.part_time_closing_time || newTimings.intern_closing_time;
+  if (ptClosing) runtimeSettings.internClosingTime = ptClosing;
+
+  const ptLateGrace = newTimings.part_time_late_grace_time || newTimings.intern_late_grace_time;
+  if (ptLateGrace) runtimeSettings.internLateGraceTime = ptLateGrace;
+
+  const ptHalfDay = newTimings.part_time_half_day_hours !== undefined ? newTimings.part_time_half_day_hours : newTimings.intern_half_day_hours;
+  if (ptHalfDay !== undefined) runtimeSettings.internHalfDayHours = parseFloat(ptHalfDay) || 3.0;
+
+  const ptFullDay = newTimings.part_time_full_day_hours !== undefined ? newTimings.part_time_full_day_hours : newTimings.intern_full_day_hours;
+  if (ptFullDay !== undefined) runtimeSettings.internFullDayHours = parseFloat(ptFullDay) || 6.0;
+
+  const ptAvgDaily = newTimings.part_time_avg_daily_hours !== undefined ? newTimings.part_time_avg_daily_hours : newTimings.intern_avg_daily_hours;
+  if (ptAvgDaily !== undefined) runtimeSettings.internAvgDailyHours = parseFloat(ptAvgDaily) || 6.0;
 
   const payload = {
     opening_time: runtimeSettings.officeOpeningTime,
@@ -93,6 +140,12 @@ export function saveOfficeTimings(newTimings, updatedBy = 'Admin') {
     half_day_hours: runtimeSettings.halfDayHours,
     full_day_hours: runtimeSettings.fullDayHours,
     avg_daily_hours: runtimeSettings.avgDailyHours,
+    part_time_opening_time: runtimeSettings.internOpeningTime,
+    part_time_closing_time: runtimeSettings.internClosingTime,
+    part_time_late_grace_time: runtimeSettings.internLateGraceTime,
+    part_time_half_day_hours: runtimeSettings.internHalfDayHours,
+    part_time_full_day_hours: runtimeSettings.internFullDayHours,
+    part_time_avg_daily_hours: runtimeSettings.internAvgDailyHours,
     intern_opening_time: runtimeSettings.internOpeningTime,
     intern_closing_time: runtimeSettings.internClosingTime,
     intern_late_grace_time: runtimeSettings.internLateGraceTime,
