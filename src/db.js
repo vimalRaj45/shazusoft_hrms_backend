@@ -67,7 +67,7 @@ const TABLE_HEADERS = {
   Attendance: ['id', 'date', 'employee_id', 'employee_name', 'login_time', 'logout_time', 'total_hours', 'break_hours', 'net_hours', 'status', 'punch_in_lat', 'punch_in_lng', 'punch_out_lat', 'punch_out_lng', 'in_geofence', 'created_at'],
   Breaks: ['id', 'attendance_id', 'employee_id', 'employee_name', 'date', 'break_type', 'start_time', 'end_time', 'duration_minutes', 'status', 'created_at'],
   WorkDone: ['id', 'date', 'employee_id', 'employee_name', 'project_name', 'task_title', 'description', 'estimated_hours', 'actual_hours', 'status', 'remarks', 'created_at'],
-  Leaves: ['id', 'employee_id', 'employee_name', 'leave_type', 'start_date', 'end_date', 'total_days', 'reason', 'status', 'reviewed_by', 'applied_at'],
+  Leaves: ['id', 'employee_id', 'employee_name', 'leave_type', 'start_date', 'end_date', 'total_days', 'reason', 'status', 'reviewed_by', 'review_remarks', 'applied_at'],
   Permissions: ['id', 'employee_id', 'employee_name', 'date', 'start_time', 'end_time', 'duration_hours', 'reason', 'status', 'reviewed_by', 'review_remarks', 'applied_at'],
   Self_Evaluations: [
     'id', 'employee_id', 'employee_name', 'designation', 'department', 'reporting_person', 'review_month', 'review_period', 'submission_date',
@@ -234,6 +234,7 @@ async function initTables() {
       reason TEXT,
       status TEXT,
       reviewed_by TEXT,
+      review_remarks TEXT,
       applied_at TEXT
     );`,
     `CREATE TABLE IF NOT EXISTS permissions (
