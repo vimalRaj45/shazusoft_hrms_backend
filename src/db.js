@@ -548,59 +548,25 @@ async function initTables() {
  * Strictly NO mock data or test users are seeded on server startup.
  */
 async function ensureRootAdminExists() {
-  const rootAdmin = {
-    id: 'EMP-ADMIN-01',
-    name: 'VS Groups Admin',
-    email: 'vsgrpsemail@gmail.com',
-    password_hash: 'OTP_AUTH_ENABLED',
-    role: 'admin',
-    department: 'Executive Management',
-    designation: 'Managing Director & Administrator',
-    employment_type: 'full_time',
-    work_mode: 'office',
-    status: 'active',
-    created_at: new Date().toISOString()
-  };
-
-  const webDev = {
-    id: 'EMP-DEV-01',
-    name: 'Vimal Raj',
-    email: 'vimalraj5207@gmail.com',
-    password_hash: 'OTP_AUTH_ENABLED',
-    role: 'employee',
-    department: 'Engineering',
-    designation: 'Web Developer',
-    employment_type: 'part_time',
-    work_mode: 'office',
-    status: 'active',
-    created_at: new Date().toISOString()
-  };
-
   const existing = await getRows('Employees');
-  
-  // Ensure root admin vsgrpsemail@gmail.com exists
-  const foundAdmin = existing.find(e => e.email?.toLowerCase() === 'vsgrpsemail@gmail.com');
-  if (!foundAdmin) {
+  if (existing.length === 0) {
+    const rootAdmin = {
+      id: 'EMP-ADMIN-01',
+      name: 'Administrator',
+      email: 'vsgrpsemail@gmail.com',
+      password_hash: 'OTP_AUTH_ENABLED',
+      role: 'admin',
+      department: 'Executive Management',
+      designation: 'Managing Director & Administrator',
+      employment_type: 'full_time',
+      work_mode: 'office',
+      status: 'active',
+      created_at: new Date().toISOString()
+    };
     await addRow('Employees', rootAdmin);
-    console.log('[PostgreSQL] Initialized root administrator account (vsgrpsemail@gmail.com).');
-  } else if (foundAdmin.role !== 'admin') {
-    await updateRow('Employees', 'id', foundAdmin.id, { role: 'admin', employment_type: 'full_time' });
-    console.log('[PostgreSQL] Synced root administrator role for vsgrpsemail@gmail.com.');
-  }
-
-  // Ensure vimalraj5207@gmail.com is configured as part-time employee web developer
-  const foundVimal = existing.find(e => e.email?.toLowerCase() === 'vimalraj5207@gmail.com');
-  if (!foundVimal) {
-    await addRow('Employees', webDev);
-    console.log('[PostgreSQL] Initialized Web Developer account (vimalraj5207@gmail.com).');
-  } else if (foundVimal.role !== 'employee' || foundVimal.designation !== 'Web Developer' || foundVimal.employment_type !== 'part_time') {
-    await updateRow('Employees', 'id', foundVimal.id, {
-      role: 'employee',
-      designation: 'Web Developer',
-      department: 'Engineering',
-      employment_type: 'part_time'
-    });
-    console.log('[PostgreSQL] Synced vimalraj5207@gmail.com as Part-Time Web Developer.');
+    console.log('[Database] Initialized default root administrator account.');
+  } else {
+    console.log(`[Database] Ready in production mode (${existing.length} registered employee accounts).`);
   }
 }
 
