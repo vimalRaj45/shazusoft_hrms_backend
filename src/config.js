@@ -60,38 +60,25 @@ export const config = {
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:info@shazusofttechnologies.org'
 };
 
-import fs from 'fs';
-
-const TIMINGS_FILE = path.resolve(__dirname, '../data/office_timings.json');
-
-let savedTimings = {};
-try {
-  if (fs.existsSync(TIMINGS_FILE)) {
-    savedTimings = JSON.parse(fs.readFileSync(TIMINGS_FILE, 'utf8'));
-  }
-} catch (e) {
-  // Silent fallback to defaults
-}
-
-// Dynamic in-memory runtime settings that admin can update from dashboard
+// Dynamic in-memory runtime settings loaded from PostgreSQL system_settings
 export const runtimeSettings = {
   officeLatitude: config.officeLatitude,
   officeLongitude: config.officeLongitude,
   officeRadiusMeters: config.officeRadiusMeters,
   // Full-time Staff shift & working hours
-  officeOpeningTime: savedTimings.opening_time || '09:30',
-  officeClosingTime: savedTimings.closing_time || '18:30',
-  officeLateGraceTime: savedTimings.late_grace_time || '09:45',
-  halfDayHours: parseFloat(savedTimings.half_day_hours) || 4.5,
-  fullDayHours: parseFloat(savedTimings.full_day_hours) || 8.5,
-  avgDailyHours: parseFloat(savedTimings.avg_daily_hours) || 8.5,
+  officeOpeningTime: '09:30',
+  officeClosingTime: '18:30',
+  officeLateGraceTime: '09:45',
+  halfDayHours: 4.5,
+  fullDayHours: 8.5,
+  avgDailyHours: 8.5,
   // Part-Time Staff shift & working hours (Admin-configured flexible / lighter hours)
-  internOpeningTime: savedTimings.part_time_opening_time || savedTimings.intern_opening_time || '10:00',
-  internClosingTime: savedTimings.part_time_closing_time || savedTimings.intern_closing_time || '16:30',
-  internLateGraceTime: savedTimings.part_time_late_grace_time || savedTimings.intern_late_grace_time || '10:15',
-  internHalfDayHours: parseFloat(savedTimings.part_time_half_day_hours || savedTimings.intern_half_day_hours) || 3.0,
-  internFullDayHours: parseFloat(savedTimings.part_time_full_day_hours || savedTimings.intern_full_day_hours) || 6.0,
-  internAvgDailyHours: parseFloat(savedTimings.part_time_avg_daily_hours || savedTimings.intern_avg_daily_hours) || 6.0,
+  internOpeningTime: '10:00',
+  internClosingTime: '16:30',
+  internLateGraceTime: '10:15',
+  internHalfDayHours: 3.0,
+  internFullDayHours: 6.0,
+  internAvgDailyHours: 6.0,
   get partTimeOpeningTime() { return this.internOpeningTime; },
   set partTimeOpeningTime(v) { this.internOpeningTime = v; },
   get partTimeClosingTime() { return this.internClosingTime; },
@@ -106,6 +93,34 @@ export const runtimeSettings = {
   set partTimeAvgDailyHours(v) { this.internAvgDailyHours = v; },
   allowMockBypassInDev: false
 };
+
+export function loadPersistedTimings(saved) {
+  if (!saved || typeof saved !== 'object') return;
+  if (saved.opening_time) runtimeSettings.officeOpeningTime = saved.opening_time;
+  if (saved.closing_time) runtimeSettings.officeClosingTime = saved.closing_time;
+  if (saved.late_grace_time) runtimeSettings.officeLateGraceTime = saved.late_grace_time;
+  if (saved.half_day_hours !== undefined) runtimeSettings.halfDayHours = parseFloat(saved.half_day_hours) || 4.5;
+  if (saved.full_day_hours !== undefined) runtimeSettings.fullDayHours = parseFloat(saved.full_day_hours) || 8.5;
+  if (saved.avg_daily_hours !== undefined) runtimeSettings.avgDailyHours = parseFloat(saved.avg_daily_hours) || 8.5;
+
+  const ptOpening = saved.part_time_opening_time || saved.intern_opening_time;
+  if (ptOpening) runtimeSettings.internOpeningTime = ptOpening;
+
+  const ptClosing = saved.part_time_closing_time || saved.intern_closing_time;
+  if (ptClosing) runtimeSettings.internClosingTime = ptClosing;
+
+  const ptLateGrace = saved.part_time_late_grace_time || saved.intern_late_grace_time;
+  if (ptLateGrace) runtimeSettings.internLateGraceTime = ptLateGrace;
+
+  const ptHalfDay = saved.part_time_half_day_hours !== undefined ? saved.part_time_half_day_hours : saved.intern_half_day_hours;
+  if (ptHalfDay !== undefined) runtimeSettings.internHalfDayHours = parseFloat(ptHalfDay) || 3.0;
+
+  const ptFullDay = saved.part_time_full_day_hours !== undefined ? saved.part_time_full_day_hours : saved.intern_full_day_hours;
+  if (ptFullDay !== undefined) runtimeSettings.internFullDayHours = parseFloat(ptFullDay) || 6.0;
+
+  const ptAvgDaily = saved.part_time_avg_daily_hours !== undefined ? saved.part_time_avg_daily_hours : saved.intern_avg_daily_hours;
+  if (ptAvgDaily !== undefined) runtimeSettings.internAvgDailyHours = parseFloat(ptAvgDaily) || 6.0;
+}
 
 export function saveOfficeTimings(newTimings, updatedBy = 'Admin') {
   if (newTimings.opening_time) runtimeSettings.officeOpeningTime = newTimings.opening_time;
@@ -156,16 +171,5 @@ export function saveOfficeTimings(newTimings, updatedBy = 'Admin') {
     updated_by: updatedBy
   };
 
-  try {
-    const dir = path.dirname(TIMINGS_FILE);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(TIMINGS_FILE, JSON.stringify(payload, null, 2), 'utf8');
-  } catch (err) {
-    console.error('[Config] Failed to persist office_timings.json:', err);
-  }
-
   return payload;
 }
-

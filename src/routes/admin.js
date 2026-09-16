@@ -1,4 +1,4 @@
-import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updateLeavePolicy } from '../db.js';
+import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updateLeavePolicy, setSystemSetting } from '../db.js';
 import { verifyAdmin, hashPassword } from '../auth.js';
 import { runtimeSettings, saveOfficeTimings } from '../config.js';
 import { format } from 'date-fns';
@@ -579,6 +579,7 @@ export default async function adminRoutes(fastify, options) {
     };
 
     const updated = saveOfficeTimings(normalizedBody, request.user.name);
+    await setSystemSetting('office_timings', updated, request.user.name);
     return {
       message: 'Office shift hours & intern working hours policy updated successfully.',
       timings: updated

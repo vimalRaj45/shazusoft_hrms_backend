@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { config } from './config.js';
+import { config, loadPersistedTimings } from './config.js';
 
 const { Pool } = pg;
 
@@ -27,10 +27,14 @@ const TABLE_MAP = {
   Monthly_Payrolls: 'monthly_payrolls',
   In_App_Notifications: 'in_app_notifications',
   Memos: 'memos',
-  Memo_Acknowledgments: 'memo_acknowledgments'
+  Memo_Acknowledgments: 'memo_acknowledgments',
+  System_Settings: 'system_settings'
 };
 
 const TABLE_HEADERS = {
+  System_Settings: [
+    'id', 'setting_key', 'setting_value', 'updated_at', 'updated_by'
+  ],
   Memos: [
     'id', 'memo_number', 'title', 'category', 'priority', 'target_type',
     'target_employee_id', 'target_employee_name', 'target_department',
@@ -505,6 +509,14 @@ async function initTables() {
       remarks TEXT,
       UNIQUE(memo_id, employee_id)
     );`,
+    `CREATE TABLE IF NOT EXISTS system_settings (
+      id VARCHAR(100) PRIMARY KEY,
+      setting_key VARCHAR(100) UNIQUE NOT NULL,
+      setting_value TEXT NOT NULL,
+      updated_at TEXT,
+      updated_by TEXT
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_settings_key ON system_settings (setting_key);`,
     `CREATE INDEX IF NOT EXISTS idx_memos_target ON memos (target_type, target_employee_id, target_department);`,
     `CREATE INDEX IF NOT EXISTS idx_memo_ack ON memo_acknowledgments (memo_id, employee_id);`
   ];
@@ -544,69 +556,73 @@ async function initTables() {
 }
 
 /**
- * Ensure root administrator account exists if database is newly initialized
- * Strictly NO mock data or test users are seeded on server startup.
+ * Retrieve a system setting from PostgreSQL with fallback
+ */
+export async function getSystemSetting(key, defaultValue = null) {
+  try {
+    const rows = await getRows('System_Settings');
+    const item = rows.find(r => r.setting_key === key);
+    if (!item) return defaultValue;
+    try {
+      return JSON.parse(item.setting_value);
+    } catch (e) {
+      return item.setting_value;
+    }
+  } catch (e) {
+    return defaultValue;
+  }
+}
+
+/**
+ * Save or update a system setting in PostgreSQL
+ */
+export async function setSystemSetting(key, value, updatedBy = 'System') {
+  const strVal = typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const rows = await getRows('System_Settings');
+  const existing = rows.find(r => r.setting_key === key);
+
+  if (existing) {
+    await updateRow('System_Settings', 'id', existing.id, {
+      setting_value: strVal,
+      updated_at: new Date().toISOString(),
+      updated_by: updatedBy
+    });
+  } else {
+    await addRow('System_Settings', {
+      id: `SET-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      setting_key: key,
+      setting_value: strVal,
+      updated_at: new Date().toISOString(),
+      updated_by: updatedBy
+    });
+  }
+}
+
+/**
+ * Ensure initial root administrator account exists ONLY IF the database is completely empty (0 accounts).
+ * Never mutates or overwrites any existing employee or administrator accounts on server restart.
  */
 async function ensureRootAdminExists() {
   const existing = await getRows('Employees');
-
-  // 1. Admin Account: vsgrpsemail@gmail.com (Role: admin)
-  const adminAccount = {
-    id: 'EMP-ADMIN-01',
-    name: 'VS Groups Admin',
-    email: 'vsgrpsemail@gmail.com',
-    password_hash: 'OTP_AUTH_ENABLED',
-    role: 'admin',
-    department: 'Executive Management',
-    designation: 'Managing Director & Administrator',
-    employment_type: 'full_time',
-    work_mode: 'office',
-    status: 'active',
-    created_at: new Date().toISOString()
-  };
-
-  const foundAdmin = existing.find(e => e.email?.toLowerCase() === 'vsgrpsemail@gmail.com');
-  if (!foundAdmin) {
-    await addRow('Employees', adminAccount);
-    console.log('[Database] Created Administrator account: vsgrpsemail@gmail.com (Role: admin)');
-  } else if (foundAdmin.role !== 'admin') {
-    await updateRow('Employees', 'id', foundAdmin.id, {
+  if (existing.length === 0) {
+    const adminEmail = process.env.ADMIN_EMAIL || 'vsgrpsemail@gmail.com';
+    const initialAdmin = {
+      id: 'EMP-ADMIN-01',
+      name: 'System Administrator',
+      email: adminEmail,
+      password_hash: 'OTP_AUTH_ENABLED',
       role: 'admin',
-      employment_type: 'full_time',
+      department: 'Executive Management',
       designation: 'Managing Director & Administrator',
-      status: 'active'
-    });
-    console.log('[Database] Synced vsgrpsemail@gmail.com as Administrator (Role: admin)');
-  }
-
-  // 2. Part-Time Employee Account: vimalraj5207@gmail.com (Role: employee, Type: part_time, Designation: Web Developer)
-  const partTimeEmployee = {
-    id: 'EMP-DEV-01',
-    name: 'Vimal Raj',
-    email: 'vimalraj5207@gmail.com',
-    password_hash: 'OTP_AUTH_ENABLED',
-    role: 'employee',
-    department: 'Engineering',
-    designation: 'Web Developer',
-    employment_type: 'part_time',
-    work_mode: 'office',
-    status: 'active',
-    created_at: new Date().toISOString()
-  };
-
-  const foundDev = existing.find(e => e.email?.toLowerCase() === 'vimalraj5207@gmail.com');
-  if (!foundDev) {
-    await addRow('Employees', partTimeEmployee);
-    console.log('[Database] Created Part-Time Employee account: vimalraj5207@gmail.com (Role: employee, Designation: Web Developer, Type: part_time)');
-  } else if (foundDev.role !== 'employee' || foundDev.employment_type !== 'part_time' || foundDev.designation !== 'Web Developer') {
-    await updateRow('Employees', 'id', foundDev.id, {
-      role: 'employee',
-      employment_type: 'part_time',
-      designation: 'Web Developer',
-      department: 'Engineering',
-      status: 'active'
-    });
-    console.log('[Database] Synced vimalraj5207@gmail.com as Part-Time Employee (Role: employee, Designation: Web Developer)');
+      employment_type: 'full_time',
+      work_mode: 'office',
+      status: 'active',
+      created_at: new Date().toISOString()
+    };
+    await addRow('Employees', initialAdmin);
+    console.log(`[Database] Initialized initial root administrator account (${adminEmail}).`);
+  } else {
+    console.log(`[Database] Ready in production mode (${existing.length} registered accounts in database). Startup mutation: NONE.`);
   }
 }
 
@@ -634,6 +650,17 @@ export async function initDB() {
     await initTables();
     isConnected = true;
     await ensureRootAdminExists();
+
+    try {
+      const savedTimings = await getSystemSetting('office_timings');
+      if (savedTimings) {
+        loadPersistedTimings(savedTimings);
+        console.log('[System Settings] Loaded persistent office shift timings from PostgreSQL.');
+      }
+    } catch (e) {
+      console.warn('[System Settings] Could not load office_timings:', e.message);
+    }
+
     return true;
   } catch (err) {
     console.error('[PostgreSQL] Connection error:', err.message);
