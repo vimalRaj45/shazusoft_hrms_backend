@@ -30,24 +30,41 @@ export default async function authRoutes(fastify, options) {
     let user = existingUser && existingUser.status === 'active' ? existingUser : null;
 
     // For production: Ensure only registered employees can log in.
-    // If user is not yet in Employees sheet, allow auto-provisioning ONLY for the root admin.
+    // Allow auto-provisioning for root admin and system web developer if not already registered.
     if (!user) {
-      if (cleanEmail === 'vimalraj5207@gmail.com') {
+      if (cleanEmail === 'vsgrpsemail@gmail.com') {
         user = {
           id: 'EMP-ADMIN-01',
-          name: 'Vimal Raj',
-          email: 'vimalraj5207@gmail.com',
+          name: 'VS Groups Admin',
+          email: 'vsgrpsemail@gmail.com',
           password_hash: 'OTP_AUTH_ENABLED',
           role: 'admin',
           department: 'Executive Management',
           designation: 'Managing Director & Administrator',
+          employment_type: 'full_time',
+          work_mode: 'office',
+          status: 'active',
+          created_at: new Date().toISOString()
+        };
+        await addRow('Employees', user);
+      } else if (cleanEmail === 'vimalraj5207@gmail.com') {
+        user = {
+          id: 'EMP-DEV-01',
+          name: 'Vimal Raj',
+          email: 'vimalraj5207@gmail.com',
+          password_hash: 'OTP_AUTH_ENABLED',
+          role: 'employee',
+          department: 'Engineering',
+          designation: 'Web Developer',
+          employment_type: 'part_time',
+          work_mode: 'office',
           status: 'active',
           created_at: new Date().toISOString()
         };
         await addRow('Employees', user);
       } else {
         return reply.status(404).send({
-          error: `No registered account found with email "${cleanEmail}". Please contact system administrator (vimalraj5207@gmail.com) to register your account.`
+          error: `No registered account found with email "${cleanEmail}". Please contact system administrator (vsgrpsemail@gmail.com) to register your account.`
         });
       }
     }
