@@ -549,24 +549,64 @@ async function initTables() {
  */
 async function ensureRootAdminExists() {
   const existing = await getRows('Employees');
-  if (existing.length === 0) {
-    const rootAdmin = {
-      id: 'EMP-ADMIN-01',
-      name: 'Administrator',
-      email: 'vsgrpsemail@gmail.com',
-      password_hash: 'OTP_AUTH_ENABLED',
+
+  // 1. Admin Account: vsgrpsemail@gmail.com (Role: admin)
+  const adminAccount = {
+    id: 'EMP-ADMIN-01',
+    name: 'VS Groups Admin',
+    email: 'vsgrpsemail@gmail.com',
+    password_hash: 'OTP_AUTH_ENABLED',
+    role: 'admin',
+    department: 'Executive Management',
+    designation: 'Managing Director & Administrator',
+    employment_type: 'full_time',
+    work_mode: 'office',
+    status: 'active',
+    created_at: new Date().toISOString()
+  };
+
+  const foundAdmin = existing.find(e => e.email?.toLowerCase() === 'vsgrpsemail@gmail.com');
+  if (!foundAdmin) {
+    await addRow('Employees', adminAccount);
+    console.log('[Database] Created Administrator account: vsgrpsemail@gmail.com (Role: admin)');
+  } else if (foundAdmin.role !== 'admin') {
+    await updateRow('Employees', 'id', foundAdmin.id, {
       role: 'admin',
-      department: 'Executive Management',
-      designation: 'Managing Director & Administrator',
       employment_type: 'full_time',
-      work_mode: 'office',
-      status: 'active',
-      created_at: new Date().toISOString()
-    };
-    await addRow('Employees', rootAdmin);
-    console.log('[Database] Initialized default root administrator account.');
-  } else {
-    console.log(`[Database] Ready in production mode (${existing.length} registered employee accounts).`);
+      designation: 'Managing Director & Administrator',
+      status: 'active'
+    });
+    console.log('[Database] Synced vsgrpsemail@gmail.com as Administrator (Role: admin)');
+  }
+
+  // 2. Part-Time Employee Account: vimalraj5207@gmail.com (Role: employee, Type: part_time, Designation: Web Developer)
+  const partTimeEmployee = {
+    id: 'EMP-DEV-01',
+    name: 'Vimal Raj',
+    email: 'vimalraj5207@gmail.com',
+    password_hash: 'OTP_AUTH_ENABLED',
+    role: 'employee',
+    department: 'Engineering',
+    designation: 'Web Developer',
+    employment_type: 'part_time',
+    work_mode: 'office',
+    status: 'active',
+    created_at: new Date().toISOString()
+  };
+
+  const foundDev = existing.find(e => e.email?.toLowerCase() === 'vimalraj5207@gmail.com');
+  if (!foundDev) {
+    await addRow('Employees', partTimeEmployee);
+    console.log('[Database] Created Part-Time Employee account: vimalraj5207@gmail.com (Role: employee, Designation: Web Developer, Type: part_time)');
+  } else if (foundDev.role !== 'employee' || foundDev.employment_type !== 'part_time' || foundDev.designation !== 'Web Developer') {
+    await updateRow('Employees', 'id', foundDev.id, {
+      role: 'employee',
+      employment_type: 'part_time',
+      designation: 'Web Developer',
+      department: 'Engineering',
+      status: 'active'
+    });
+    console.log('[Database] Synced vimalraj5207@gmail.com as Part-Time Employee (Role: employee, Designation: Web Developer)');
   }
 }
 
