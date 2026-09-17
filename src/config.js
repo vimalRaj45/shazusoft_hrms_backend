@@ -57,7 +57,9 @@ export const config = {
   timeZone: process.env.TIMEZONE || 'Asia/Kolkata',
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BPzYce6UvC8ShowBUmiQFxeKSAwKqOt-F88DErrFG5UyUExDNuNDVnyPgfXmQM5quBSQ2sDuwowiNv42189KVnA',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '-wVAHRSLiI6QQa0gGVcWpj2gC8Ll6iKmw-3_d6k47YQ',
-  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:info@shazusofttechnologies.org'
+  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:info@shazusofttechnologies.org',
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || ''
 };
 
 // Dynamic in-memory runtime settings loaded from PostgreSQL system_settings

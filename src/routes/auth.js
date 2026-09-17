@@ -1,12 +1,85 @@
 import { getRows, addRow, updateRow } from '../db.js';
 import { comparePassword, verifyAuth } from '../auth.js';
 import { sendOTPEmail } from '../mailer.js';
+import { config } from '../config.js';
+import { OAuth2Client } from 'google-auth-library';
 import bcrypt from 'bcryptjs';
 
 // In-memory cache for OTP codes with 10-minute expiry
 const otpCache = new Map();
 
 export default async function authRoutes(fastify, options) {
+  // POST /api/auth/google - Authenticate with Google One-Tap / OAuth Credential
+  fastify.post('/google', async (request, reply) => {
+    const { credential } = request.body || {};
+
+    if (!credential) {
+      return reply.status(400).send({ error: 'Google authentication credential is required.' });
+    }
+
+    try {
+      const client = new OAuth2Client(config.googleClientId);
+      const ticket = await client.verifyIdToken({
+        idToken: credential,
+        audience: config.googleClientId
+      });
+
+      const payload = ticket.getPayload();
+      if (!payload || !payload.email) {
+        return reply.status(400).send({ error: 'Failed to verify Google identity.' });
+      }
+
+      const cleanEmail = payload.email.trim().toLowerCase();
+      const employees = await getRows('Employees');
+      const existingUser = employees.find(e => e.email?.toLowerCase() === cleanEmail);
+
+      if (!existingUser) {
+        return reply.status(404).send({
+          error: `No registered account found with Google email "${cleanEmail}". Please contact HR administration.`
+        });
+      }
+
+      if (existingUser.status !== 'active') {
+        return reply.status(403).send({
+          error: `Account associated with "${cleanEmail}" is ${existingUser.status === 'resigned' ? 'marked as resigned' : 'deactivated'}. Please contact HR administration.`,
+          code: 'ACCOUNT_DEACTIVATED'
+        });
+      }
+
+      const user = existingUser;
+
+      const token = fastify.jwt.sign({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        designation: user.designation,
+        work_mode: user.work_mode || 'office',
+        employment_type: user.employment_type || 'full_time'
+      });
+
+      return {
+        token,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          department: user.department,
+          designation: user.designation,
+          work_mode: user.work_mode || 'office',
+          employment_type: user.employment_type || 'full_time'
+        }
+      };
+    } catch (err) {
+      console.error('[Google Auth Error]', err.message);
+      return reply.status(401).send({
+        error: 'Google authentication failed or expired. Please try again.'
+      });
+    }
+  });
+
   // POST /api/auth/send-otp - Send 6-digit verification code via Corporate Mail
   fastify.post('/send-otp', async (request, reply) => {
     const { email } = request.body || {};

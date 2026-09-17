@@ -543,7 +543,8 @@ async function initTables() {
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS performance_gaps TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS strategic_suggestions TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS next_month_roadmap TEXT;`,
-    `UPDATE employees SET employment_type = 'part_time' WHERE LOWER(employment_type) = 'internship';`
+    `UPDATE employees SET employment_type = 'part_time' WHERE LOWER(employment_type) = 'internship';`,
+    `UPDATE employees SET employment_type = 'part_time' WHERE LOWER(email) = 'praveenshazusoft@gmail.com';`
   ];
 
   for (const m of migrations) {
