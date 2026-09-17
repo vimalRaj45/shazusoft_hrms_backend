@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { config } from './src/config.js';
 import { initDB, getRows, addRow, deleteRow } from './src/db.js';
 
-const BASE_URL = `http://localhost:${config.port || 5000}`;
+const BASE_URL = `http://127.0.0.1:${config.port || 5000}`;
 
 // ANSI Colors for beautiful test runner reporting
 const colors = {

@@ -568,6 +568,22 @@ export default async function adminRoutes(fastify, options) {
   fastify.put('/office-timings', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const body = request.body || {};
 
+    const timeFields = ['opening_time', 'closing_time', 'late_grace_time', 'intern_opening_time', 'intern_closing_time', 'intern_late_grace_time'];
+    const validTimeRegex = /^([01]?\d|2[0-3]):([0-5]\d)(:[0-5]\d)?(\s*(AM|PM))?$/i;
+
+    for (const field of timeFields) {
+      if (body[field] && typeof body[field] === 'string') {
+        const str = body[field].trim();
+        if (!validTimeRegex.test(str)) {
+          return reply.status(400).send({ error: `Invalid time format for "${field}". Must be HH:MM in 24h or 12h AM/PM format.` });
+        }
+        const [h, m] = str.split(':').map(n => parseInt(n, 10));
+        if (h > 23 || m > 59) {
+          return reply.status(400).send({ error: `Invalid hour or minute in "${field}".` });
+        }
+      }
+    }
+
     const normalizedBody = {
       ...body,
       opening_time: body.opening_time ? timeTo24h(body.opening_time) : undefined,
