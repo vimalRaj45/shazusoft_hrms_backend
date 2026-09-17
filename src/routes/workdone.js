@@ -35,6 +35,14 @@ export default async function workDoneRoutes(fastify, options) {
       }
     }
 
+    let finalEstHours = String(estimated_hours || '0').trim();
+    let finalActHours = String(actual_hours || '0').trim();
+
+    // If marked Completed without filling actual_hours, default to estimated_hours
+    if (status === 'Completed' && (finalActHours === '0' || finalActHours === '0.0' || finalActHours === '0.00' || !finalActHours) && parseFloat(finalEstHours) > 0) {
+      finalActHours = finalEstHours;
+    }
+
     const newRecord = {
       id: `TASK-${Date.now()}-${targetEmpId}`,
       date: taskDate,
@@ -43,8 +51,8 @@ export default async function workDoneRoutes(fastify, options) {
       project_name,
       task_title,
       description,
-      estimated_hours: String(estimated_hours),
-      actual_hours: String(actual_hours),
+      estimated_hours: finalEstHours,
+      actual_hours: finalActHours,
       status,
       remarks,
       created_at: new Date().toISOString()
@@ -117,7 +125,16 @@ export default async function workDoneRoutes(fastify, options) {
     if (task_title !== undefined) updateData.task_title = task_title;
     if (description !== undefined) updateData.description = description;
     if (estimated_hours !== undefined) updateData.estimated_hours = String(estimated_hours);
-    if (actual_hours !== undefined) updateData.actual_hours = String(actual_hours);
+    
+    let targetStatus = status !== undefined ? status : existing.status;
+    let targetAct = actual_hours !== undefined ? String(actual_hours) : existing.actual_hours;
+    let targetEst = estimated_hours !== undefined ? String(estimated_hours) : existing.estimated_hours;
+
+    if (targetStatus === 'Completed' && (targetAct === '0' || targetAct === '0.0' || targetAct === '0.00' || !targetAct) && parseFloat(targetEst) > 0) {
+      targetAct = targetEst;
+    }
+
+    if (actual_hours !== undefined || targetAct !== existing.actual_hours) updateData.actual_hours = targetAct;
     if (status !== undefined) updateData.status = status;
     if (remarks !== undefined) updateData.remarks = remarks;
 

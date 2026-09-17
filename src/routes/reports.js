@@ -2,7 +2,9 @@ import { getRows, addRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { generateMonthlyAIReport } from '../mistral.js';
 import { format } from 'date-fns';
-import { getCurrentMonthStr } from '../utils/dateTime.js';
+import { getCurrentMonthStr, getTodayDateStr, getNowTimeStr } from '../utils/dateTime.js';
+import { computeEffectiveAttendance } from './attendance.js';
+import { runtimeSettings } from '../config.js';
 
 const normalizeDateStr = (d) => {
   if (!d) return '';
@@ -16,6 +18,8 @@ export default async function reportsRoutes(fastify, options) {
     const { employee_id, month_year } = request.query || {};
     const targetEmpId = request.user.role === 'admin' && employee_id ? employee_id : request.user.id;
     const targetMonth = month_year || getCurrentMonthStr();
+    const todayStr = getTodayDateStr();
+    const nowTimeStr = getNowTimeStr();
 
     // Fetch all related data
     const [employees, attendance, workDone, leaves, permissions] = await Promise.all([
@@ -31,14 +35,25 @@ export default async function reportsRoutes(fastify, options) {
       return reply.status(404).send({ error: 'Employee not found.' });
     }
 
-    // Filter data for target month
-    const empAttendance = attendance
-      .filter(a => (a.employee_id === employee.id || a.employee_id === employee.email || a.employee_name === employee.name) && normalizeDateStr(a.date).startsWith(targetMonth))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(employee.employment_type || '').toLowerCase()) ||
+      Boolean(employee.designation?.toLowerCase().includes('part-time') || employee.designation?.toLowerCase().includes('intern'));
+    const defaultClosing = isPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30');
 
+    // Filter and compute effective data for target month
     const empWorkDone = workDone
       .filter(w => (w.employee_id === employee.id || w.employee_id === employee.email || w.employee_name === employee.name) && normalizeDateStr(w.date).startsWith(targetMonth))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const rawEmpAttendance = attendance
+      .filter(a => (a.employee_id === employee.id || a.employee_id === employee.email || a.employee_name === employee.name) && normalizeDateStr(a.date).startsWith(targetMonth))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const empAttendance = rawEmpAttendance.map(a => {
+      const aDate = normalizeDateStr(a.date);
+      const dayTasks = empWorkDone.filter(w => normalizeDateStr(w.date) === aDate);
+      const dayTaskHours = dayTasks.reduce((acc, t) => acc + (parseFloat(t.actual_hours || t.estimated_hours || 0) || 0), 0);
+      return computeEffectiveAttendance(a, aDate, todayStr, nowTimeStr, dayTaskHours, defaultClosing);
+    });
 
     const empLeaves = leaves
       .filter(l => (l.employee_id === employee.id || l.employee_id === employee.email) && (normalizeDateStr(l.start_date).startsWith(targetMonth) || normalizeDateStr(l.applied_at).startsWith(targetMonth)));

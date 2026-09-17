@@ -22,6 +22,78 @@ const normalizeDateStr = (d) => {
   return String(d).slice(0, 10);
 };
 
+export function computeEffectiveAttendance(record, targetDateStr, todayStr, nowTimeStr, dayTaskHours = 0, defaultClosingTime = '18:30') {
+  if (!record) return null;
+
+  const isToday = targetDateStr === todayStr;
+  const isPast = targetDateStr < todayStr;
+  const rawLogin = record.login_time || '';
+  const rawLogout = record.logout_time || '';
+
+  let effectiveLogout = rawLogout;
+  let effectiveTotalHours = parseFloat(record.total_hours) || 0;
+  let effectiveNetHours = parseFloat(record.net_hours) || 0;
+
+  // Case 1: Active punch on TODAY
+  if (isToday && !rawLogout) {
+    effectiveLogout = 'In Progress';
+    if (rawLogin) {
+      try {
+        const loginDt = parseTimeStrToDate(todayStr, rawLogin);
+        const nowDt = parseTimeStrToDate(todayStr, nowTimeStr);
+        const diffMins = Math.max(1, differenceInMinutes(nowDt, loginDt));
+        effectiveTotalHours = parseFloat((diffMins / 60).toFixed(2));
+        effectiveNetHours = effectiveTotalHours;
+      } catch (e) {
+        effectiveTotalHours = 0.5;
+        effectiveNetHours = 0.5;
+      }
+    }
+  } 
+  // Case 2: Past unclosed punch (logged in on past date, forgot to punch out)
+  else if (isPast && !rawLogout) {
+    effectiveLogout = formatTime12h(defaultClosingTime);
+    if (rawLogin) {
+      try {
+        const loginDt = parseTimeStrToDate(targetDateStr, rawLogin);
+        const closeDt = parseTimeStrToDate(targetDateStr, defaultClosingTime);
+        let diffMins = Math.max(0, differenceInMinutes(closeDt, loginDt));
+        if (diffMins <= 0 || isNaN(diffMins)) {
+          diffMins = dayTaskHours > 0 ? Math.round(dayTaskHours * 60) : 60;
+        }
+        effectiveTotalHours = parseFloat((diffMins / 60).toFixed(2));
+        effectiveNetHours = effectiveTotalHours;
+      } catch (e) {
+        effectiveTotalHours = dayTaskHours > 0 ? dayTaskHours : 4.0;
+        effectiveNetHours = effectiveTotalHours;
+      }
+    } else if (dayTaskHours > 0) {
+      effectiveTotalHours = dayTaskHours;
+      effectiveNetHours = dayTaskHours;
+    }
+  } 
+  // Case 3: Explicit logout recorded
+  else if (effectiveNetHours === 0 && effectiveTotalHours === 0 && rawLogin && rawLogout && rawLogout !== 'In Progress') {
+    try {
+      const loginDt = parseTimeStrToDate(targetDateStr, rawLogin);
+      const logoutDt = parseTimeStrToDate(targetDateStr, rawLogout);
+      const diffMins = Math.max(0, differenceInMinutes(logoutDt, loginDt));
+      effectiveTotalHours = parseFloat((diffMins / 60).toFixed(2));
+      effectiveNetHours = effectiveTotalHours;
+    } catch (e) {}
+  }
+
+  return {
+    ...record,
+    login_time: rawLogin ? formatTime12h(rawLogin) : '--',
+    logout_time: effectiveLogout ? (effectiveLogout === 'In Progress' ? 'In Progress' : formatTime12h(effectiveLogout)) : '--',
+    total_hours: effectiveTotalHours.toFixed(2),
+    net_hours: effectiveNetHours.toFixed(2),
+    raw_login_time: rawLogin,
+    raw_logout_time: rawLogout
+  };
+}
+
 export default async function attendanceRoutes(fastify, options) {
   // Check geofence status for given coords
   fastify.post('/check-geofence', { preHandler: [verifyAuth] }, async (request, reply) => {
@@ -478,10 +550,18 @@ export default async function attendanceRoutes(fastify, options) {
           });
 
           if (record) {
-            const hours = parseFloat(record.net_hours || record.total_hours || '0');
+            const eff = computeEffectiveAttendance(
+              record,
+              dateStr,
+              todayStr,
+              getNowTimeStr(),
+              dayTaskHours,
+              isTargetPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30')
+            );
+            const hours = parseFloat(eff.net_hours || '0');
             totalWorkingHoursNum += isNaN(hours) ? 0 : hours;
             presentDaysCount++;
-            if (record.status === 'Late') lateCount++;
+            if (eff.status === 'Late') lateCount++;
 
             days.push({
               id: record.id,
@@ -493,11 +573,11 @@ export default async function attendanceRoutes(fastify, options) {
               is_working_sunday: !!isWorkingSunday,
               is_future: false,
               is_today: isToday,
-              status: record.status || 'Present',
-              login_time: record.login_time ? formatTime12h(record.login_time) : '--',
-              logout_time: record.logout_time ? (record.logout_time === 'In Progress' ? 'In Progress' : formatTime12h(record.logout_time)) : (isToday ? 'In Progress' : '--'),
-              total_hours: record.total_hours || '0',
-              net_hours: record.net_hours || record.total_hours || '0',
+              status: eff.status || 'Present',
+              login_time: eff.login_time,
+              logout_time: eff.logout_time,
+              total_hours: eff.total_hours,
+              net_hours: eff.net_hours,
               in_geofence: record.in_geofence || 'TRUE',
               ...baseDayMeta
             });
@@ -761,10 +841,24 @@ export default async function attendanceRoutes(fastify, options) {
           });
 
           if (record) {
-            const hours = parseFloat(record.net_hours || record.total_hours || '0');
+            const isTargetStaffPartTime = Boolean(
+              ['part_time', 'parttime', 'internship'].includes(String(targetEmp.employment_type || '').toLowerCase()) ||
+              targetEmp.designation?.toLowerCase().includes('part-time') ||
+              targetEmp.designation?.toLowerCase().includes('intern') ||
+              targetEmp.role === 'intern'
+            );
+            const eff = computeEffectiveAttendance(
+              record,
+              dateStr,
+              todayStr,
+              getNowTimeStr(),
+              dayTaskHours,
+              isTargetStaffPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30')
+            );
+            const hours = parseFloat(eff.net_hours || '0');
             totalWorkingHoursNum += isNaN(hours) ? 0 : hours;
             presentDaysCount++;
-            if (record.status === 'Late') lateCount++;
+            if (eff.status === 'Late') lateCount++;
 
             days.push({
               id: record.id,
@@ -776,11 +870,11 @@ export default async function attendanceRoutes(fastify, options) {
               is_working_sunday: !!isWorkingSunday,
               is_future: false,
               is_today: isToday,
-              status: record.status || 'Present',
-              login_time: record.login_time ? formatTime12h(record.login_time) : '--',
-              logout_time: record.logout_time ? (record.logout_time === 'In Progress' ? 'In Progress' : formatTime12h(record.logout_time)) : (isToday ? 'In Progress' : '--'),
-              total_hours: record.total_hours || '0',
-              net_hours: record.net_hours || record.total_hours || '0',
+              status: eff.status || 'Present',
+              login_time: eff.login_time,
+              logout_time: eff.logout_time,
+              total_hours: eff.total_hours,
+              net_hours: eff.net_hours,
               in_geofence: record.in_geofence || 'TRUE',
               ...baseDayMeta
             });
