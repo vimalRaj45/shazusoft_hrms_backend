@@ -1,33 +1,72 @@
 import { buildServer } from './src/server.js';
 import { initDB } from './src/db.js';
+import { config } from './src/config.js';
+import jwt from 'jsonwebtoken';
 
 async function runKernelTestSuite() {
-  console.log('🧪 Starting Kernel Master CRUD & Immutable Audit Test Suite...');
+  console.log('🧪 Starting Kernel Master CRUD & Immutable Audit Test Suite (Root OTP Mode)...');
 
   await initDB();
   const app = await buildServer();
   await app.ready();
 
+  const rootEmail = config.rootAdminEmail || 'vsgrpsemail@gmail.com';
   let token = '';
 
-  // 1. Test Kernel Root Authentication
-  console.log('\n--- 1. Testing Kernel Root Authentication ---');
-  const loginRes = await app.inject({
+  // 1. Test Root Email Configuration Discovery
+  console.log('\n--- 1. Testing Root Admin Config Endpoint ---');
+  const configRes = await app.inject({
+    method: 'GET',
+    url: '/api/kernel/auth/config'
+  });
+  const configData = JSON.parse(configRes.body);
+  console.log('✅ Configured Root Email in .env:', configData.rootEmail, '(Masked:', configData.maskedEmail, ')');
+
+  // 1b. Test Unauthorized Email Rejected
+  console.log('\n--- 1b. Testing Non-Root Email Rejection Gate ---');
+  const fakeEmailRes = await app.inject({
     method: 'POST',
-    url: '/api/kernel/auth/login',
+    url: '/api/kernel/auth/send-otp',
     payload: {
-      masterKey: 'ShazuKernelRoot@2026'
+      email: 'hacker@random.com'
     }
   });
-
-  if (loginRes.statusCode !== 200) {
-    console.error('❌ Failed kernel login:', loginRes.body);
+  if (fakeEmailRes.statusCode === 403) {
+    console.log('✅ Security Pass: Unauthorized non-root email correctly rejected with 403 Forbidden!');
+  } else {
+    console.error('❌ Failed security gate: non-root email was not rejected with 403.');
     process.exit(1);
   }
 
-  const loginData = JSON.parse(loginRes.body);
-  token = loginData.token;
-  console.log('✅ Kernel Root Login successful! Actor:', loginData.user?.name);
+  // 1c. Test Valid Root Email OTP Dispatch
+  console.log('\n--- 1c. Testing Valid Root Email OTP Dispatch ---');
+  const sendOtpRes = await app.inject({
+    method: 'POST',
+    url: '/api/kernel/auth/send-otp',
+    payload: {
+      email: rootEmail
+    }
+  });
+
+  if (sendOtpRes.statusCode !== 200) {
+    console.error('❌ Failed root send-otp:', sendOtpRes.body);
+    process.exit(1);
+  }
+  console.log('✅ Root OTP dispatch successful:', JSON.parse(sendOtpRes.body).message);
+
+  // Sign valid kernel_admin token for subsequent CRUD suite tests
+  token = jwt.sign(
+    {
+      id: 'KERNEL-ROOT-01',
+      name: 'Master Kernel Administrator',
+      email: rootEmail,
+      role: 'kernel_admin',
+      is_kernel_admin: true
+    },
+    config.jwtSecret,
+    { expiresIn: '8h' }
+  );
+  console.log('✅ Kernel Root Authorization Token issued for tests.');
 
   // 2. Test Tables Schema Discovery
   console.log('\n--- 2. Testing Universal Tables Schema Discovery ---');

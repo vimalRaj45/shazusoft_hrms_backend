@@ -72,6 +72,7 @@ const TABLE_HEADERS = {
     'id', 'name', 'email', 'password_hash', 'role', 'department', 'designation', 'work_mode', 'employment_type', 'status',
     'phone', 'avatar_url', 'personal_info', 'statutory_info', 'emergency_contacts', 'documents_json', 'profile_completeness',
     'documents_frozen', 'frozen_at', 'frozen_by', 'frozen_by_name',
+    'shift_start_time', 'shift_end_time', 'shift_late_grace_time', 'shift_target_hours',
     'created_at'
   ],
   Attendance: ['id', 'date', 'employee_id', 'employee_name', 'login_time', 'logout_time', 'total_hours', 'break_hours', 'net_hours', 'status', 'punch_in_lat', 'punch_in_lng', 'punch_out_lat', 'punch_out_lng', 'in_geofence', 'created_at'],
@@ -565,6 +566,10 @@ async function initTables() {
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_by TEXT;`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS frozen_by_name TEXT;`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS employment_type VARCHAR(50) DEFAULT 'full_time';`,
+    `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_start_time VARCHAR(20);`,
+    `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_end_time VARCHAR(20);`,
+    `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_late_grace_time VARCHAR(20);`,
+    `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_target_hours NUMERIC;`,
     `ALTER TABLE leaves ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
     `ALTER TABLE permissions ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS performance_gaps TEXT;`,

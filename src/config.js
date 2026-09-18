@@ -59,7 +59,8 @@ export const config = {
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '-wVAHRSLiI6QQa0gGVcWpj2gC8Ll6iKmw-3_d6k47YQ',
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:info@shazusofttechnologies.org',
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
-  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || ''
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  rootAdminEmail: (process.env.ROOT_ADMIN_EMAIL || process.env.ADMIN_EMAIL || 'vsgrpsemail@gmail.com').trim().toLowerCase()
 };
 
 // Dynamic in-memory runtime settings loaded from PostgreSQL system_settings

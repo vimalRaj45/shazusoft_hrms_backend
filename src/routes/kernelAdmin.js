@@ -10,12 +10,11 @@ import {
   rollbackKernelRecord,
   getAllTableSchemas
 } from '../db.js';
-import { hashPassword, comparePassword } from '../auth.js';
+import { sendOTPEmail } from '../mailer.js';
 import { config } from '../config.js';
 
-// Configurable Master Key / Root Passphrase
-const MASTER_ROOT_KEY = process.env.KERNEL_MASTER_KEY || process.env.ROOT_ADMIN_KEY || 'ShazuKernelRoot@2026';
-const ROOT_ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'vsgrpsemail@gmail.com';
+// Dedicated in-memory cache for Kernel Root OTP codes with 10-minute expiry
+const kernelOtpCache = new Map();
 
 /**
  * Kernel Level Admin Authentication Middleware
@@ -29,137 +28,196 @@ export async function verifyKernelAdmin(request, reply) {
   }
 
   const user = request.user;
-  if (!user || (!user.is_kernel_admin && user.role !== 'kernel_admin' && user.role !== 'admin')) {
+  if (!user || (!user.is_kernel_admin && user.role !== 'kernel_admin')) {
     return reply.status(403).send({ error: 'Access Denied: Kernel Level Root Authorization required.' });
   }
 }
 
 export default async function kernelAdminRoutes(fastify, options) {
   // ─────────────────────────────────────────────────────────────
-  //  1. DEDICATED KERNEL LOGIN & AUTHENTICATION
+  //  1. DEDICATED KERNEL ROOT EMAIL OTP AUTHENTICATION
   // ─────────────────────────────────────────────────────────────
 
-  // POST /api/kernel/auth/login — Dedicated Root/Kernel Login Gateway
-  fastify.post('/auth/login', async (request, reply) => {
-    const { email, password, masterKey, passcode } = request.body || {};
+  // GET /api/kernel/auth/config — Retrieve Root Admin Email Info (from .env)
+  fastify.get('/auth/config', async (request, reply) => {
+    const rootEmail = config.rootAdminEmail;
+    // Mask email for security (e.g. v***@gmail.com)
+    const [userPart, domainPart] = rootEmail.split('@');
+    const maskedUser = userPart.length > 2 
+      ? `${userPart.charAt(0)}${'*'.repeat(userPart.length - 2)}${userPart.slice(-1)}`
+      : `${userPart.charAt(0)}*`;
+    const maskedEmail = `${maskedUser}@${domainPart || 'domain.com'}`;
+
+    return {
+      rootEmailConfigured: true,
+      rootEmail,
+      maskedEmail
+    };
+  });
+
+  // POST /api/kernel/auth/send-otp — Dispatch 6-digit Root Passcode to configured .env Root Email
+  fastify.post('/auth/send-otp', async (request, reply) => {
+    const { email } = request.body || {};
     const clientIp = request.ip || request.headers['x-forwarded-for'] || '127.0.0.1';
     const userAgent = request.headers['user-agent'] || 'Unknown Agent';
 
-    const providedKey = (masterKey || passcode || '').trim();
+    const configuredRootEmail = config.rootAdminEmail;
     const cleanEmail = (email || '').trim().toLowerCase();
 
-    // Path 1: Direct Master Key Authentication
-    if (providedKey && providedKey === MASTER_ROOT_KEY) {
-      const kernelUser = {
-        id: 'KERNEL-ROOT-01',
-        name: 'Master Kernel Administrator',
-        email: cleanEmail || ROOT_ADMIN_EMAIL,
-        role: 'kernel_admin',
-        is_kernel_admin: true,
-        session_created: new Date().toISOString()
-      };
+    // Strict validation: Email MUST match the root administrator email configured in .env
+    if (!cleanEmail || cleanEmail !== configuredRootEmail) {
+      await logKernelAction({
+        actorId: 'UNAUTHORIZED_ATTEMPT',
+        actorName: cleanEmail || 'Unknown',
+        actorRole: 'unauthorized',
+        actorIp: clientIp,
+        userAgent,
+        actionType: 'FAILED_ROOT_OTP',
+        tableName: 'SYSTEM_SECURITY',
+        recordId: cleanEmail,
+        reason: `Unauthorized attempt to request Root OTP for non-root email: ${cleanEmail}. Expected: ${configuredRootEmail}`,
+        status: 'FAILED'
+      });
 
-      const token = fastify.jwt.sign(kernelUser, { expiresIn: '8h' });
+      return reply.status(403).send({
+        error: `Access Denied: Only the designated Root Administrator email configured in system environment (${configuredRootEmail}) is authorized for Kernel Access.`
+      });
+    }
+
+    // Generate secure 6-digit numeric OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+
+    kernelOtpCache.set(configuredRootEmail, {
+      otp,
+      expiresAt,
+      attempts: 0
+    });
+
+    try {
+      await sendOTPEmail({
+        toEmail: configuredRootEmail,
+        otp,
+        employeeName: 'Root System Administrator'
+      });
 
       await logKernelAction({
-        actorId: kernelUser.id,
-        actorName: kernelUser.name,
+        actorId: 'KERNEL-ROOT',
+        actorName: 'Root Administrator',
         actorRole: 'kernel_admin',
         actorIp: clientIp,
         userAgent,
-        actionType: 'ROOT_LOGIN',
+        actionType: 'ROOT_OTP_DISPATCHED',
         tableName: 'SYSTEM_SECURITY',
-        recordId: kernelUser.id,
-        reason: 'Master Root Key Authentication Successful',
+        recordId: configuredRootEmail,
+        reason: `Root Verification OTP dispatched to ${configuredRootEmail}`,
         status: 'SUCCESS'
       });
 
+      console.log(`[Kernel Security] Root OTP successfully dispatched to ${configuredRootEmail}`);
+
       return {
         success: true,
-        message: 'Kernel Root Console Authorized.',
-        token,
-        user: kernelUser
+        message: `A single-use 6-digit Root Verification Code has been dispatched to ${configuredRootEmail}.`
       };
+    } catch (err) {
+      console.error('[Kernel OTP Mailer Error]', err.message);
+      return reply.status(500).send({
+        error: 'Failed to deliver Root OTP verification email via corporate mail server. Please verify mailer configuration.'
+      });
+    }
+  });
+
+  // POST /api/kernel/auth/verify-otp — Verify Root OTP and Issue Elevated Kernel JWT
+  fastify.post('/auth/verify-otp', async (request, reply) => {
+    const { email, otp } = request.body || {};
+    const clientIp = request.ip || request.headers['x-forwarded-for'] || '127.0.0.1';
+    const userAgent = request.headers['user-agent'] || 'Unknown Agent';
+
+    const configuredRootEmail = config.rootAdminEmail;
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanOtp = (otp || '').toString().trim();
+
+    if (!cleanEmail || !cleanOtp) {
+      return reply.status(400).send({ error: 'Root Administrator email and 6-digit OTP code are required.' });
     }
 
-    // Path 2: Email + Password/Passcode Authentication for registered Admins
-    if (cleanEmail) {
-      const employees = await getRows('Employees');
-      const adminUser = employees.find(e => e.email?.toLowerCase() === cleanEmail && e.role === 'admin' && e.status === 'active');
+    if (cleanEmail !== configuredRootEmail) {
+      return reply.status(403).send({ error: 'Access Denied: Invalid Root Email.' });
+    }
 
-      if (!adminUser) {
-        await logKernelAction({
-          actorId: 'ANONYMOUS',
-          actorName: cleanEmail || 'Unknown',
-          actorRole: 'unauthorized',
-          actorIp: clientIp,
-          userAgent,
-          actionType: 'FAILED_LOGIN',
-          tableName: 'SYSTEM_SECURITY',
-          recordId: cleanEmail,
-          reason: 'Failed Kernel login attempt - User not found or not Admin',
-          status: 'FAILED'
-        });
-        return reply.status(401).send({ error: 'Invalid Root Administrator credentials.' });
-      }
+    const cached = kernelOtpCache.get(configuredRootEmail);
+    if (!cached) {
+      return reply.status(400).send({ error: 'No active Root verification session found. Please request a new OTP code.' });
+    }
 
-      // If user matched and provided correct master key or password
-      const isKeyMatch = providedKey === MASTER_ROOT_KEY;
-      const isPasswordMatch = password && adminUser.password_hash && adminUser.password_hash !== 'OTP_AUTH_ENABLED'
-        ? comparePassword(password, adminUser.password_hash)
-        : false;
+    if (Date.now() > cached.expiresAt) {
+      kernelOtpCache.delete(configuredRootEmail);
+      return reply.status(400).send({ error: 'Root verification code has expired. Please request a new one.' });
+    }
 
-      if (!isKeyMatch && !isPasswordMatch && providedKey !== 'admin123') {
-        await logKernelAction({
-          actorId: adminUser.id,
-          actorName: adminUser.name,
-          actorRole: 'admin',
-          actorIp: clientIp,
-          userAgent,
-          actionType: 'FAILED_LOGIN',
-          tableName: 'SYSTEM_SECURITY',
-          recordId: adminUser.id,
-          reason: 'Invalid passcode or password for root access',
-          status: 'FAILED'
-        });
-        return reply.status(401).send({ error: 'Invalid Root Master Passcode or Password.' });
-      }
+    if (cached.attempts >= 5) {
+      kernelOtpCache.delete(configuredRootEmail);
+      return reply.status(429).send({ error: 'Too many invalid attempts. Security lockout applied. Please request a new OTP.' });
+    }
 
-      const kernelUser = {
-        id: adminUser.id,
-        name: adminUser.name,
-        email: adminUser.email,
-        role: 'kernel_admin',
-        is_kernel_admin: true,
-        department: adminUser.department,
-        designation: adminUser.designation,
-        session_created: new Date().toISOString()
-      };
-
-      const token = fastify.jwt.sign(kernelUser, { expiresIn: '8h' });
-
+    if (cached.otp !== cleanOtp) {
+      cached.attempts += 1;
       await logKernelAction({
-        actorId: kernelUser.id,
-        actorName: kernelUser.name,
+        actorId: 'KERNEL-ROOT',
+        actorName: 'Root Administrator',
         actorRole: 'kernel_admin',
         actorIp: clientIp,
         userAgent,
-        actionType: 'ROOT_LOGIN',
+        actionType: 'FAILED_OTP_VERIFY',
         tableName: 'SYSTEM_SECURITY',
-        recordId: kernelUser.id,
-        reason: 'Root Administrator Authenticated via Credential Gate',
-        status: 'SUCCESS'
+        recordId: configuredRootEmail,
+        reason: `Invalid Root OTP attempt (${cached.attempts}/5)`,
+        status: 'FAILED'
       });
 
-      return {
-        success: true,
-        message: `Welcome to HRMS Kernel Command Center, ${kernelUser.name}`,
-        token,
-        user: kernelUser
-      };
+      return reply.status(401).send({ error: `Invalid verification code. ${5 - cached.attempts} attempts remaining.` });
     }
 
-    return reply.status(400).send({ error: 'Master Key or Administrator Email is required for Kernel Root access.' });
+    // OTP Valid - Remove session from cache
+    kernelOtpCache.delete(configuredRootEmail);
+
+    // Fetch matching employee record or generate root identity
+    const employees = await getRows('Employees');
+    const matchedEmployee = employees.find(e => e.email?.toLowerCase() === configuredRootEmail);
+
+    const kernelUser = {
+      id: matchedEmployee?.id || 'KERNEL-ROOT-01',
+      name: matchedEmployee?.name || 'Master Kernel Administrator',
+      email: configuredRootEmail,
+      role: 'kernel_admin',
+      is_kernel_admin: true,
+      department: matchedEmployee?.department || 'System Architecture',
+      designation: matchedEmployee?.designation || 'Master Administrator',
+      session_created: new Date().toISOString()
+    };
+
+    const token = fastify.jwt.sign(kernelUser, { expiresIn: '8h' });
+
+    await logKernelAction({
+      actorId: kernelUser.id,
+      actorName: kernelUser.name,
+      actorRole: 'kernel_admin',
+      actorIp: clientIp,
+      userAgent,
+      actionType: 'ROOT_LOGIN_OTP',
+      tableName: 'SYSTEM_SECURITY',
+      recordId: kernelUser.id,
+      reason: `Root Administrator authenticated successfully via Email OTP (${configuredRootEmail})`,
+      status: 'SUCCESS'
+    });
+
+    return {
+      success: true,
+      message: `Kernel Root Console Authorized. Welcome, ${kernelUser.name}!`,
+      token,
+      user: kernelUser
+    };
   });
 
   // GET /api/kernel/auth/me — Verify active Kernel session

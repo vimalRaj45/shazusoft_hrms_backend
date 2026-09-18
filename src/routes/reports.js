@@ -37,7 +37,7 @@ export default async function reportsRoutes(fastify, options) {
 
     const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(employee.employment_type || '').toLowerCase()) ||
       Boolean(employee.designation?.toLowerCase().includes('part-time') || employee.designation?.toLowerCase().includes('intern'));
-    const defaultClosing = isPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30');
+    const defaultClosing = employee.shift_end_time || (isPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'));
 
     // Filter and compute effective data for target month
     const empWorkDone = workDone

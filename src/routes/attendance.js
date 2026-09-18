@@ -186,14 +186,25 @@ export default async function attendanceRoutes(fastify, options) {
       });
     }
 
-    // Determine if late using dynamic office shift settings
-    // Part-time staff are evaluated against partTimeLateGraceTime / internLateGraceTime (default 10:15 AM)
-    // Full-time staff are evaluated against officeLateGraceTime (default 09:45 AM)
+    // Determine if late using employee individual shift schedule if set, else company shift settings
     const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(request.user?.employment_type || '').toLowerCase()) ||
       Boolean(request.user?.designation?.toLowerCase().includes('part-time') || request.user?.designation?.toLowerCase().includes('intern'));
-    const graceSetting = isPartTime
-      ? (runtimeSettings.partTimeLateGraceTime || runtimeSettings.internLateGraceTime || '10:15')
-      : (runtimeSettings.officeLateGraceTime || '09:45');
+
+    let graceSetting;
+    if (employee?.shift_late_grace_time) {
+      graceSetting = employee.shift_late_grace_time;
+    } else if (employee?.shift_start_time) {
+      const [sh, sm] = employee.shift_start_time.split(':').map(n => parseInt(n, 10));
+      const totalMins = (sh || 0) * 60 + (sm || 0) + 15;
+      const gh = Math.floor(totalMins / 60) % 24;
+      const gm = totalMins % 60;
+      graceSetting = `${String(gh).padStart(2, '0')}:${String(gm).padStart(2, '0')}`;
+    } else {
+      graceSetting = isPartTime
+        ? (runtimeSettings.partTimeLateGraceTime || runtimeSettings.internLateGraceTime || '10:15')
+        : (runtimeSettings.officeLateGraceTime || '09:45');
+    }
+
     const { hour: busHour, minute: busMinute } = getBusinessHoursAndMinutes();
     const [graceHour, graceMinute] = graceSetting
       .split(':')
@@ -321,17 +332,55 @@ export default async function attendanceRoutes(fastify, options) {
 
   // GET /api/attendance/office-timings — Office shift timings & target working hours tailored to caller
   fastify.get('/office-timings', { preHandler: [verifyAuth] }, async (request, reply) => {
-    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(request.user?.employment_type || '').toLowerCase()) ||
+    const employees = await getRows('Employees');
+    const employee = employees.find(e => e.id === request.user?.id || e.email === request.user?.email);
+    const isPartTime = ['part_time', 'parttime', 'internship'].includes(String(employee?.employment_type || request.user?.employment_type || '').toLowerCase()) ||
       Boolean(request.user?.designation?.toLowerCase().includes('part-time') || request.user?.designation?.toLowerCase().includes('intern'));
+
+    let openingTime = runtimeSettings.officeOpeningTime || '09:30';
+    let closingTime = runtimeSettings.officeClosingTime || '18:30';
+    let lateGraceTime = runtimeSettings.officeLateGraceTime || '09:45';
+    let fullDayHours = runtimeSettings.fullDayHours || 8.5;
+    let halfDayHours = runtimeSettings.halfDayHours || 4.5;
+    let avgDailyHours = runtimeSettings.avgDailyHours || 8.5;
+
+    if (isPartTime) {
+      openingTime = runtimeSettings.internOpeningTime || '10:00';
+      closingTime = runtimeSettings.internClosingTime || '16:30';
+      lateGraceTime = runtimeSettings.internLateGraceTime || '10:15';
+      fullDayHours = runtimeSettings.internFullDayHours || 6.0;
+      halfDayHours = runtimeSettings.internHalfDayHours || 3.0;
+      avgDailyHours = runtimeSettings.internAvgDailyHours || 6.0;
+    }
+
+    // High priority: Individual Employee Custom Shift Schedule configured by Admin
+    if (employee?.shift_start_time) openingTime = employee.shift_start_time;
+    if (employee?.shift_end_time) closingTime = employee.shift_end_time;
+    if (employee?.shift_late_grace_time) {
+      lateGraceTime = employee.shift_late_grace_time;
+    } else if (employee?.shift_start_time) {
+      const [sh, sm] = employee.shift_start_time.split(':').map(n => parseInt(n, 10));
+      const totalMins = (sh || 0) * 60 + (sm || 0) + 15;
+      const gh = Math.floor(totalMins / 60) % 24;
+      const gm = totalMins % 60;
+      lateGraceTime = `${String(gh).padStart(2, '0')}:${String(gm).padStart(2, '0')}`;
+    }
+    if (employee?.shift_target_hours) {
+      fullDayHours = parseFloat(employee.shift_target_hours) || fullDayHours;
+      halfDayHours = parseFloat((fullDayHours / 2).toFixed(1));
+      avgDailyHours = fullDayHours;
+    }
+
     return {
-      employment_type: request.user?.employment_type || 'full_time',
+      employment_type: employee?.employment_type || request.user?.employment_type || 'full_time',
+      has_custom_schedule: Boolean(employee?.shift_start_time || employee?.shift_end_time || employee?.shift_target_hours),
       timings: {
-        opening_time: isPartTime ? (runtimeSettings.internOpeningTime || '10:00') : (runtimeSettings.officeOpeningTime || '09:30'),
-        closing_time: isPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'),
-        late_grace_time: isPartTime ? (runtimeSettings.internLateGraceTime || '10:15') : (runtimeSettings.officeLateGraceTime || '09:45'),
-        full_day_hours: isPartTime ? (runtimeSettings.internFullDayHours || 6.0) : (runtimeSettings.fullDayHours || 8.5),
-        half_day_hours: isPartTime ? (runtimeSettings.internHalfDayHours || 3.0) : (runtimeSettings.halfDayHours || 4.5),
-        avg_daily_hours: isPartTime ? (runtimeSettings.internAvgDailyHours || 6.0) : (runtimeSettings.avgDailyHours || 8.5)
+        opening_time: openingTime,
+        closing_time: closingTime,
+        late_grace_time: lateGraceTime,
+        full_day_hours: fullDayHours,
+        half_day_hours: halfDayHours,
+        avg_daily_hours: avgDailyHours
       },
       all_timings: {
         staff: {
@@ -408,12 +457,16 @@ export default async function attendanceRoutes(fastify, options) {
       request.user.designation?.toLowerCase().includes('part-time') ||
       request.user.designation?.toLowerCase().includes('intern')
     );
-    const targetAvgHours = isTargetPartTime
-      ? (runtimeSettings.internAvgDailyHours || 6.0)
-      : (runtimeSettings.avgDailyHours || runtimeSettings.fullDayHours || 8.5);
-    const requiredFullDayHours = isTargetPartTime
-      ? (runtimeSettings.internFullDayHours || 6.0)
-      : (runtimeSettings.fullDayHours || 8.5);
+    const targetAvgHours = targetEmp.shift_target_hours
+      ? (parseFloat(targetEmp.shift_target_hours) || 8.5)
+      : (isTargetPartTime
+          ? (runtimeSettings.internAvgDailyHours || 6.0)
+          : (runtimeSettings.avgDailyHours || runtimeSettings.fullDayHours || 8.5));
+    const requiredFullDayHours = targetEmp.shift_target_hours
+      ? (parseFloat(targetEmp.shift_target_hours) || 8.5)
+      : (isTargetPartTime
+          ? (runtimeSettings.internFullDayHours || 6.0)
+          : (runtimeSettings.fullDayHours || 8.5));
 
     // Build a quick lookup set of holiday dates in this month
     const holidayMap = {};
@@ -556,7 +609,7 @@ export default async function attendanceRoutes(fastify, options) {
               todayStr,
               getNowTimeStr(),
               dayTaskHours,
-              isTargetPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30')
+              targetEmp.shift_end_time || (isTargetPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'))
             );
             const hours = parseFloat(eff.net_hours || '0');
             totalWorkingHoursNum += isNaN(hours) ? 0 : hours;
@@ -853,7 +906,7 @@ export default async function attendanceRoutes(fastify, options) {
               todayStr,
               getNowTimeStr(),
               dayTaskHours,
-              isTargetStaffPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30')
+              targetEmp.shift_end_time || (isTargetStaffPartTime ? (runtimeSettings.internClosingTime || '16:30') : (runtimeSettings.officeClosingTime || '18:30'))
             );
             const hours = parseFloat(eff.net_hours || '0');
             totalWorkingHoursNum += isNaN(hours) ? 0 : hours;
@@ -876,6 +929,11 @@ export default async function attendanceRoutes(fastify, options) {
               total_hours: eff.total_hours,
               net_hours: eff.net_hours,
               in_geofence: record.in_geofence || 'TRUE',
+              punch_in_lat: record.punch_in_lat,
+              punch_in_lng: record.punch_in_lng,
+              punch_out_lat: record.punch_out_lat,
+              punch_out_lng: record.punch_out_lng,
+              day_task_hours: dayTaskHours.toFixed(1),
               ...baseDayMeta
             });
           } else if (leave) {

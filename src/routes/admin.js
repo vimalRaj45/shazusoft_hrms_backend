@@ -162,6 +162,10 @@ export default async function adminRoutes(fastify, options) {
       status: 'active',
       profile_completeness: 0,
       documents_frozen: false,
+      shift_start_time: request.body?.shift_start_time?.trim() || null,
+      shift_end_time: request.body?.shift_end_time?.trim() || null,
+      shift_late_grace_time: request.body?.shift_late_grace_time?.trim() || null,
+      shift_target_hours: request.body?.shift_target_hours ? parseFloat(request.body.shift_target_hours) : null,
       created_at: new Date().toISOString()
     };
 
@@ -195,25 +199,43 @@ export default async function adminRoutes(fastify, options) {
     }
   });
 
-  // Update employee
+  // PUT /api/admin/employees/:id — Update employee
   fastify.put('/employees/:id', { preHandler: [verifyAdmin] }, async (request, reply) => {
     const { id } = request.params;
-    const { name, email, role, department, designation, status, password, work_mode, employment_type } = request.body || {};
+    const {
+      name,
+      email,
+      role,
+      department,
+      designation,
+      status,
+      password,
+      work_mode,
+      employment_type,
+      shift_start_time,
+      shift_end_time,
+      shift_late_grace_time,
+      shift_target_hours
+    } = request.body || {};
 
     const updateData = {};
-    if (name) updateData.name = name;
-    if (email) updateData.email = email;
-    if (role) updateData.role = role;
-    if (department) updateData.department = department;
-    if (designation) updateData.designation = designation;
-    if (status) updateData.status = status;
-    if (work_mode) updateData.work_mode = work_mode === 'wfh' ? 'wfh' : 'office';
-    if (employment_type) {
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (role !== undefined) updateData.role = role;
+    if (department !== undefined) updateData.department = department;
+    if (designation !== undefined) updateData.designation = designation;
+    if (status !== undefined) updateData.status = status;
+    if (work_mode !== undefined) updateData.work_mode = work_mode === 'wfh' ? 'wfh' : 'office';
+    if (employment_type !== undefined) {
       updateData.employment_type = ['part_time', 'parttime', 'internship'].includes(String(employment_type).toLowerCase())
         ? 'part_time'
         : 'full_time';
     }
     if (password) updateData.password_hash = hashPassword(password);
+    if (shift_start_time !== undefined) updateData.shift_start_time = shift_start_time || null;
+    if (shift_end_time !== undefined) updateData.shift_end_time = shift_end_time || null;
+    if (shift_late_grace_time !== undefined) updateData.shift_late_grace_time = shift_late_grace_time || null;
+    if (shift_target_hours !== undefined) updateData.shift_target_hours = shift_target_hours ? parseFloat(shift_target_hours) : null;
 
     const updated = await updateRow('Employees', 'id', id, updateData);
     if (!updated) {
@@ -222,6 +244,50 @@ export default async function adminRoutes(fastify, options) {
 
     const { password_hash, ...clean } = updated;
     return { message: 'Employee updated successfully', employee: clean };
+  });
+
+  // Dedicated Shift Schedule Configurator for Individual Employee
+  fastify.patch('/employees/:id/shift-schedule', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const {
+      shift_start_time,
+      shift_end_time,
+      shift_late_grace_time,
+      shift_target_hours,
+      reset_to_default
+    } = request.body || {};
+
+    const employees = await getRows('Employees');
+    const existing = employees.find(e => e.id === id);
+    if (!existing) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    let updateData = {};
+    if (reset_to_default) {
+      updateData = {
+        shift_start_time: null,
+        shift_end_time: null,
+        shift_late_grace_time: null,
+        shift_target_hours: null
+      };
+    } else {
+      if (shift_start_time !== undefined) updateData.shift_start_time = shift_start_time || null;
+      if (shift_end_time !== undefined) updateData.shift_end_time = shift_end_time || null;
+      if (shift_late_grace_time !== undefined) updateData.shift_late_grace_time = shift_late_grace_time || null;
+      if (shift_target_hours !== undefined) updateData.shift_target_hours = shift_target_hours ? parseFloat(shift_target_hours) : null;
+    }
+
+    const updated = await updateRow('Employees', 'id', id, updateData);
+    const { password_hash, ...clean } = updated;
+
+    return {
+      success: true,
+      message: reset_to_default
+        ? `Shift schedule reset to company standard timings for ${clean.name}.`
+        : `Custom shift schedule (${clean.shift_start_time || 'Standard'} - ${clean.shift_end_time || 'Standard'}) applied to ${clean.name}.`,
+      employee: clean
+    };
   });
 
   // Quick toggle work mode (office <-> wfh)
