@@ -24,6 +24,7 @@ import uploadRoutes from './routes/uploads.js';
 import notificationsRoutes from './routes/notifications.js';
 import payrollRoutes from './routes/payroll.js';
 import memosRoutes from './routes/memos.js';
+import kernelAdminRoutes from './routes/kernelAdmin.js';
 
 async function buildServer() {
   const fastify = Fastify({
@@ -68,6 +69,7 @@ async function buildServer() {
   await fastify.register(notificationsRoutes, { prefix: '/api/notifications' });
   await fastify.register(payrollRoutes, { prefix: '/api/payroll' });
   await fastify.register(memosRoutes, { prefix: '/api/memos' });
+  await fastify.register(kernelAdminRoutes, { prefix: '/api/kernel' });
 
   return fastify;
 }

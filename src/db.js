@@ -28,10 +28,16 @@ const TABLE_MAP = {
   In_App_Notifications: 'in_app_notifications',
   Memos: 'memos',
   Memo_Acknowledgments: 'memo_acknowledgments',
-  System_Settings: 'system_settings'
+  System_Settings: 'system_settings',
+  Kernel_Audit_Logs: 'kernel_audit_logs'
 };
 
 const TABLE_HEADERS = {
+  Kernel_Audit_Logs: [
+    'id', 'timestamp', 'actor_id', 'actor_name', 'actor_role', 'actor_ip', 'user_agent',
+    'action_type', 'table_name', 'record_id', 'previous_state', 'new_state', 'diff_summary',
+    'reason', 'status', 'created_at'
+  ],
   System_Settings: [
     'id', 'setting_key', 'setting_value', 'updated_at', 'updated_by'
   ],
@@ -131,7 +137,8 @@ const memoryDB = {
   Monthly_Payrolls: [],
   In_App_Notifications: [],
   Memos: [],
-  Memo_Acknowledgments: []
+  Memo_Acknowledgments: [],
+  Kernel_Audit_Logs: []
 };
 
 // 15-second cache for high-speed read operations
@@ -516,9 +523,29 @@ async function initTables() {
       updated_at TEXT,
       updated_by TEXT
     );`,
+    `CREATE TABLE IF NOT EXISTS kernel_audit_logs (
+      id VARCHAR(100) PRIMARY KEY,
+      timestamp TEXT NOT NULL,
+      actor_id VARCHAR(50) NOT NULL,
+      actor_name VARCHAR(150) NOT NULL,
+      actor_role VARCHAR(50) NOT NULL,
+      actor_ip TEXT,
+      user_agent TEXT,
+      action_type VARCHAR(50) NOT NULL,
+      table_name VARCHAR(100) NOT NULL,
+      record_id VARCHAR(100),
+      previous_state TEXT,
+      new_state TEXT,
+      diff_summary TEXT,
+      reason TEXT NOT NULL,
+      status VARCHAR(50) DEFAULT 'SUCCESS',
+      created_at TEXT
+    );`,
     `CREATE INDEX IF NOT EXISTS idx_settings_key ON system_settings (setting_key);`,
     `CREATE INDEX IF NOT EXISTS idx_memos_target ON memos (target_type, target_employee_id, target_department);`,
-    `CREATE INDEX IF NOT EXISTS idx_memo_ack ON memo_acknowledgments (memo_id, employee_id);`
+    `CREATE INDEX IF NOT EXISTS idx_memo_ack ON memo_acknowledgments (memo_id, employee_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_kernel_audit_table ON kernel_audit_logs (table_name, created_at);`,
+    `CREATE INDEX IF NOT EXISTS idx_kernel_audit_actor ON kernel_audit_logs (actor_id, created_at);`
   ];
 
   for (const q of queries) {
@@ -1013,4 +1040,223 @@ export async function upsertSalaryStructure(updatedData) {
   invalidateCache('Monthly_Payrolls');
   return cleanData;
 }
+
+/**
+ * Kernel Audit Action Logger with Field Diff Calculation
+ */
+export async function logKernelAction({
+  actorId = 'KERNEL-ROOT',
+  actorName = 'Root Administrator',
+  actorRole = 'kernel_admin',
+  actorIp = '127.0.0.1',
+  userAgent = 'HRMS-Kernel-Console/1.0',
+  actionType, // 'CREATE', 'UPDATE', 'DELETE', 'OVERRIDE', 'ROLLBACK', 'EXPORT'
+  tableName,
+  recordId,
+  previousState = null,
+  newState = null,
+  diffSummary = null,
+  reason = 'Administrative Kernel Action',
+  status = 'SUCCESS'
+}) {
+  const nowIso = new Date().toISOString();
+  const logId = `KLOG-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+  // Automatically calculate diff summary if not supplied and both states exist
+  let calculatedDiff = diffSummary;
+  if (!calculatedDiff && previousState && newState && typeof previousState === 'object' && typeof newState === 'object') {
+    const changes = [];
+    const allKeys = new Set([...Object.keys(previousState), ...Object.keys(newState)]);
+    for (const key of allKeys) {
+      if (['password_hash'].includes(key)) continue;
+      const oldVal = previousState[key];
+      const newVal = newState[key];
+      if (String(oldVal ?? '') !== String(newVal ?? '')) {
+        changes.push({
+          field: key,
+          oldValue: oldVal === undefined ? null : oldVal,
+          newValue: newVal === undefined ? null : newVal
+        });
+      }
+    }
+    calculatedDiff = changes;
+  }
+
+  const logEntry = {
+    id: logId,
+    timestamp: nowIso,
+    actor_id: String(actorId || 'KERNEL-ROOT'),
+    actor_name: String(actorName || 'Root Admin'),
+    actor_role: String(actorRole || 'kernel_admin'),
+    actor_ip: String(actorIp || ''),
+    user_agent: String(userAgent || ''),
+    action_type: String(actionType || 'UNKNOWN').toUpperCase(),
+    table_name: String(tableName || 'SYSTEM'),
+    record_id: String(recordId || ''),
+    previous_state: previousState ? (typeof previousState === 'string' ? previousState : JSON.stringify(previousState)) : '',
+    new_state: newState ? (typeof newState === 'string' ? newState : JSON.stringify(newState)) : '',
+    diff_summary: calculatedDiff ? (typeof calculatedDiff === 'string' ? calculatedDiff : JSON.stringify(calculatedDiff)) : '',
+    reason: String(reason || 'Kernel Administrative Operation'),
+    status: String(status || 'SUCCESS'),
+    created_at: nowIso
+  };
+
+  try {
+    await addRow('Kernel_Audit_Logs', logEntry);
+    console.log(`[Kernel Audit] [${logEntry.action_type}] on table "${logEntry.table_name}" (record: ${logEntry.record_id}) by ${logEntry.actor_name}`);
+    return logEntry;
+  } catch (err) {
+    console.error('[Kernel Audit Logging Error]', err.message);
+    return logEntry;
+  }
+}
+
+/**
+ * Fetch Kernel Audit Logs with Search and Filtering
+ */
+export async function getKernelAuditLogs({
+  limit = 100,
+  offset = 0,
+  tableName = '',
+  actorId = '',
+  actionType = '',
+  search = ''
+} = {}) {
+  const allLogs = await getRows('Kernel_Audit_Logs');
+  let filtered = [...allLogs];
+
+  if (tableName) {
+    filtered = filtered.filter(l => l.table_name?.toLowerCase() === tableName.toLowerCase());
+  }
+  if (actorId) {
+    filtered = filtered.filter(l => l.actor_id?.toLowerCase() === actorId.toLowerCase());
+  }
+  if (actionType) {
+    filtered = filtered.filter(l => l.action_type?.toUpperCase() === actionType.toUpperCase());
+  }
+  if (search) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter(l =>
+      l.id?.toLowerCase().includes(q) ||
+      l.actor_name?.toLowerCase().includes(q) ||
+      l.table_name?.toLowerCase().includes(q) ||
+      l.record_id?.toLowerCase().includes(q) ||
+      l.reason?.toLowerCase().includes(q) ||
+      l.diff_summary?.toLowerCase().includes(q)
+    );
+  }
+
+  // Sort newest first
+  filtered.sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0));
+
+  const total = filtered.length;
+  const paginated = filtered.slice(offset, offset + limit);
+
+  return {
+    total,
+    limit,
+    offset,
+    logs: paginated
+  };
+}
+
+/**
+ * Rollback a record to its previous snapshot from a specific audit log
+ */
+export async function rollbackKernelRecord(logId, operator = {}) {
+  const allLogs = await getRows('Kernel_Audit_Logs');
+  const targetLog = allLogs.find(l => l.id === logId);
+
+  if (!targetLog) {
+    throw new Error(`Audit log with ID "${logId}" not found.`);
+  }
+
+  if (!targetLog.previous_state) {
+    throw new Error(`No previous snapshot available for rollback in log entry "${logId}".`);
+  }
+
+  let snapshot;
+  try {
+    snapshot = typeof targetLog.previous_state === 'string'
+      ? JSON.parse(targetLog.previous_state)
+      : targetLog.previous_state;
+  } catch (err) {
+    throw new Error('Failed to parse previous state snapshot for rollback.');
+  }
+
+  const tableName = targetLog.table_name;
+  const recordId = targetLog.record_id || snapshot.id;
+
+  if (!TABLE_MAP[tableName] && !TABLE_MAP[tableName.charAt(0).toUpperCase() + tableName.slice(1)]) {
+    throw new Error(`Target table "${tableName}" is not recognized.`);
+  }
+
+  const standardTableName = Object.keys(TABLE_MAP).find(k => k.toLowerCase() === tableName.toLowerCase()) || tableName;
+
+  // Retrieve current state for the audit log of this rollback action
+  const currentRows = await getRows(standardTableName);
+  const currentState = currentRows.find(r => String(r.id) === String(recordId)) || null;
+
+  let restored;
+  if (targetLog.action_type === 'DELETE') {
+    // Re-create the deleted record
+    restored = await addRow(standardTableName, snapshot);
+  } else {
+    // Update current record back to snapshot
+    restored = await updateRow(standardTableName, 'id', recordId, snapshot);
+    if (!restored) {
+      restored = await addRow(standardTableName, snapshot);
+    }
+  }
+
+  // Log rollback operation
+  await logKernelAction({
+    actorId: operator.id || 'KERNEL-ROOT',
+    actorName: operator.name || 'Root Administrator',
+    actorRole: operator.role || 'kernel_admin',
+    actorIp: operator.ip || '127.0.0.1',
+    userAgent: operator.userAgent || 'Kernel Console Rollback',
+    actionType: 'ROLLBACK',
+    tableName: standardTableName,
+    recordId: String(recordId),
+    previousState: currentState,
+    newState: restored,
+    reason: `Rollback applied from Audit Log ${logId}: ${operator.reason || 'Restored historical snapshot'}`
+  });
+
+  return {
+    success: true,
+    restoredRecord: restored,
+    rollbackFromLog: targetLog
+  };
+}
+
+/**
+ * Return schema metadata, column lists, and current row counts for all system tables
+ */
+export async function getAllTableSchemas() {
+  const tables = [];
+
+  for (const [modelName, sqlName] of Object.entries(TABLE_MAP)) {
+    const headers = TABLE_HEADERS[modelName] || [];
+    let count = 0;
+    try {
+      const rows = await getRows(modelName);
+      count = rows.length;
+    } catch (e) {
+      count = 0;
+    }
+
+    tables.push({
+      modelName,
+      sqlName,
+      columns: headers,
+      rowCount: count,
+      isSystemCritical: ['Employees', 'Attendance', 'Salary_Structures', 'Monthly_Payrolls', 'Kernel_Audit_Logs'].includes(modelName)
+    });
+  }
+
+  return tables;
+}
+
 
