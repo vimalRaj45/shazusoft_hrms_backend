@@ -54,3 +54,15 @@ export async function verifyAdmin(request, reply) {
     return reply.status(403).send({ error: 'Forbidden: Admin access required' });
   }
 }
+
+export function hasPermission(employee, permissionKey) {
+  if (!employee) return false;
+  if (employee.role === 'admin') return true;
+  let perms = {};
+  try {
+    perms = employee.permissions_json
+      ? (typeof employee.permissions_json === 'string' ? JSON.parse(employee.permissions_json) : employee.permissions_json)
+      : {};
+  } catch (e) {}
+  return Boolean(perms[permissionKey]);
+}

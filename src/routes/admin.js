@@ -4,6 +4,7 @@ import { runtimeSettings, saveOfficeTimings } from '../config.js';
 import { format } from 'date-fns';
 import { formatTime12h, timeTo24h, getTodayDateStr } from '../utils/dateTime.js';
 import { sendInvitationEmail } from '../mailer.js';
+import { sendSseEvent } from '../inAppNotificationService.js';
 
 export default async function adminRoutes(fastify, options) {
   // Live Office Attendance & Presence Board
@@ -63,11 +64,17 @@ export default async function adminRoutes(fastify, options) {
       let statutoryInfo = {};
       let emergencyContacts = {};
       let documents = [];
+      let permissions = {};
 
       try { personalInfo = rest.personal_info ? (typeof rest.personal_info === 'string' ? JSON.parse(rest.personal_info) : rest.personal_info) : {}; } catch (e) {}
       try { statutoryInfo = rest.statutory_info ? (typeof rest.statutory_info === 'string' ? JSON.parse(rest.statutory_info) : rest.statutory_info) : {}; } catch (e) {}
       try { emergencyContacts = rest.emergency_contacts ? (typeof rest.emergency_contacts === 'string' ? JSON.parse(rest.emergency_contacts) : rest.emergency_contacts) : {}; } catch (e) {}
       try { documents = rest.documents_json ? (typeof rest.documents_json === 'string' ? JSON.parse(rest.documents_json) : rest.documents_json) : []; } catch (e) {}
+      try {
+        permissions = rest.permissions_json
+          ? (typeof rest.permissions_json === 'string' ? JSON.parse(rest.permissions_json) : rest.permissions_json)
+          : (rest.custom_permissions ? (typeof rest.custom_permissions === 'string' ? JSON.parse(rest.custom_permissions) : rest.custom_permissions) : {});
+      } catch (e) {}
 
       return {
         ...rest,
@@ -75,6 +82,7 @@ export default async function adminRoutes(fastify, options) {
         statutory_info: statutoryInfo,
         emergency_contacts: emergencyContacts,
         documents: Array.isArray(documents) ? documents : [],
+        permissions: permissions || {},
         profile_completeness: parseInt(rest.profile_completeness, 10) || 0,
         documents_frozen: Boolean(rest.documents_frozen === true || rest.documents_frozen === 'true' || rest.documents_frozen === 't')
       };
@@ -354,6 +362,117 @@ export default async function adminRoutes(fastify, options) {
       message: targetType === 'full_time'
         ? `🎉 Success: ${clean.name} has been promoted to Full-Time Staff!`
         : `Status updated: ${clean.name} switched to Part-Time track.`,
+      employee: clean
+    };
+  });
+
+  // Dedicated RBAC & Permission Configurator for Individual Employee
+  fastify.patch('/employees/:id/rbac', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const { role, permissions, reason } = request.body || {};
+
+    const rows = await getRows('Employees');
+    const existing = rows.find(e => e.id?.toLowerCase() === id?.toLowerCase() || e.email?.toLowerCase() === id?.toLowerCase());
+    if (!existing) {
+      return reply.status(404).send({ error: 'Employee not found.' });
+    }
+
+    const currentUserId = request.user?.id;
+    const targetRole = role ? role.trim().toLowerCase() : existing.role;
+
+    // Safety Guard 1: An admin cannot demote themselves from admin role
+    if (existing.id === currentUserId && existing.role === 'admin' && targetRole !== 'admin') {
+      return reply.status(400).send({
+        error: 'Safety Guard: You cannot remove Admin access from your own current logged-in account to prevent lockout.'
+      });
+    }
+
+    // Safety Guard 2: Cannot remove the last remaining active Admin in the company
+    if (existing.role === 'admin' && targetRole !== 'admin') {
+      const activeAdmins = rows.filter(e => e.role === 'admin' && e.status === 'active' && e.id !== existing.id);
+      if (activeAdmins.length === 0) {
+        return reply.status(400).send({
+          error: 'Safety Guard: Cannot revoke Admin privileges from this user as they are the only remaining active Administrator.'
+        });
+      }
+    }
+
+    const updateData = {};
+    if (role) {
+      updateData.role = targetRole;
+    }
+    if (permissions !== undefined) {
+      updateData.permissions_json = typeof permissions === 'object' ? JSON.stringify(permissions) : String(permissions || '{}');
+      updateData.custom_permissions = updateData.permissions_json;
+    }
+
+    const updated = await updateRow('Employees', 'id', existing.id, updateData);
+    if (!updated) {
+      return reply.status(500).send({ error: 'Failed to update user RBAC.' });
+    }
+
+    const { password_hash, ...clean } = updated;
+    try {
+      clean.permissions = clean.permissions_json ? JSON.parse(clean.permissions_json) : {};
+    } catch (e) {
+      clean.permissions = {};
+    }
+
+    // Log to Communications_Log and Kernel_Audit_Logs for security & compliance
+    try {
+      await addRow('Communications_Log', {
+        id: `COMM-${Date.now()}`,
+        type: 'RBAC_UPDATED',
+        sender_id: request.user?.id || 'admin',
+        sender_name: request.user?.name || 'System Administrator',
+        recipient_id: existing.id,
+        recipient_name: existing.name,
+        subject: `RBAC Role & Permissions Updated: ${targetRole.toUpperCase()}`,
+        message: reason || `Assigned system role '${targetRole.toUpperCase()}' with customized access privileges by ${request.user?.name || 'Admin'}.`,
+        metadata_json: JSON.stringify({
+          previous_role: existing.role,
+          new_role: targetRole,
+          permissions: clean.permissions,
+          reason: reason || 'Administrative RBAC configuration'
+        }),
+        created_at: new Date().toISOString()
+      });
+    } catch (logErr) {
+      fastify.log.warn(`Failed to log RBAC update: ${logErr.message}`);
+    }
+
+    try {
+      await addRow('Kernel_Audit_Logs', {
+        id: `AUDIT-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        actor_id: request.user?.id || 'admin',
+        actor_name: request.user?.name || 'Admin',
+        actor_role: 'admin',
+        actor_ip: request.ip || '127.0.0.1',
+        user_agent: request.headers['user-agent'] || 'Admin Console',
+        action_type: 'UPDATE_RBAC',
+        table_name: 'employees',
+        record_id: existing.id,
+        previous_state: JSON.stringify({ role: existing.role, permissions: existing.permissions_json }),
+        new_state: JSON.stringify({ role: targetRole, permissions: updateData.permissions_json }),
+        diff_summary: `Role changed from ${existing.role} to ${targetRole}`,
+        reason: reason || 'Admin RBAC configuration',
+        status: 'SUCCESS',
+        created_at: new Date().toISOString()
+      });
+    } catch (auditErr) {
+      fastify.log.warn(`Failed to record kernel audit log: ${auditErr.message}`);
+    }
+
+    sendSseEvent('ALL', 'data_update', {
+      type: 'employee_updated',
+      employee_id: existing.id,
+      employee: clean
+    });
+
+    return {
+      success: true,
+      message: `RBAC updated successfully: ${clean.name} is now assigned as ${targetRole.toUpperCase()}.`,
       employee: clean
     };
   });

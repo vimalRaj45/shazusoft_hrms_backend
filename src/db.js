@@ -73,6 +73,7 @@ const TABLE_HEADERS = {
     'phone', 'avatar_url', 'personal_info', 'statutory_info', 'emergency_contacts', 'documents_json', 'profile_completeness',
     'documents_frozen', 'frozen_at', 'frozen_by', 'frozen_by_name',
     'shift_start_time', 'shift_end_time', 'shift_late_grace_time', 'shift_target_hours',
+    'permissions_json', 'custom_permissions',
     'created_at'
   ],
   Attendance: ['id', 'date', 'employee_id', 'employee_name', 'login_time', 'logout_time', 'total_hours', 'break_hours', 'net_hours', 'status', 'punch_in_lat', 'punch_in_lng', 'punch_out_lat', 'punch_out_lng', 'in_geofence', 'created_at'],
@@ -570,6 +571,8 @@ async function initTables() {
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_end_time VARCHAR(20);`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_late_grace_time VARCHAR(20);`,
     `ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_target_hours NUMERIC;`,
+    `ALTER TABLE employees ADD COLUMN IF NOT EXISTS permissions_json TEXT;`,
+    `ALTER TABLE employees ADD COLUMN IF NOT EXISTS custom_permissions TEXT;`,
     `ALTER TABLE leaves ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
     `ALTER TABLE permissions ADD COLUMN IF NOT EXISTS review_remarks TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS performance_gaps TEXT;`,
@@ -761,6 +764,8 @@ export async function addRow(tableName, rowData) {
       cleanData[h] = parseInt(cleanData[h], 10) || 0;
     } else if (tableName === 'Employees' && h === 'documents_frozen') {
       cleanData[h] = Boolean(cleanData[h] === true || cleanData[h] === 'true' || cleanData[h] === 't');
+    } else if (tableName === 'Employees' && h === 'shift_target_hours') {
+      cleanData[h] = cleanData[h] !== undefined && cleanData[h] !== null && cleanData[h] !== '' ? parseFloat(cleanData[h]) : null;
     } else if (tableName === 'In_App_Notifications' && h === 'is_read') {
       cleanData[h] = Boolean(cleanData[h] === true || cleanData[h] === 'true' || cleanData[h] === 't');
     } else if (cleanData[h] === undefined || cleanData[h] === null) {
