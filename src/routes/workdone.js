@@ -79,16 +79,19 @@ export default async function workDoneRoutes(fastify, options) {
     return { tasks: userTasks };
   });
 
-  // Get all tasks (Admin only)
-  fastify.get('/all', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { date, employee_id } = request.query || {};
+  // Get all tasks (Admin & Managers / Team Leads)
+  fastify.get('/all', { preHandler: [verifyAuth] }, async (request, reply) => {
+    const { date, employee_id, month } = request.query || {};
     let rows = await getRows('WorkDone');
 
     if (date) {
       rows = rows.filter(t => t.date === date);
     }
-    if (employee_id) {
-      rows = rows.filter(t => t.employee_id === employee_id);
+    if (month) {
+      rows = rows.filter(t => (t.date || '').startsWith(month));
+    }
+    if (employee_id && employee_id !== 'ALL') {
+      rows = rows.filter(t => t.employee_id === employee_id || t.employee_name === employee_id);
     }
 
     rows.sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime());

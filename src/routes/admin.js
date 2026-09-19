@@ -57,7 +57,7 @@ export default async function adminRoutes(fastify, options) {
   });
 
   // Get all employees with full compliance records & documents
-  fastify.get('/employees', { preHandler: [verifyAdmin] }, async (request, reply) => {
+  fastify.get('/employees', { preHandler: [verifyAuth] }, async (request, reply) => {
     const rows = await getRows('Employees');
     const sanitized = rows.map(({ password_hash, ...rest }) => {
       let personalInfo = {};
