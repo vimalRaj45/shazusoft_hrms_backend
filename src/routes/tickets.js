@@ -1,7 +1,7 @@
 import { getRows, addRow, updateRow, deleteRow } from '../db.js';
 import { verifyAuth, verifyAdmin } from '../auth.js';
 import { sendPushNotification, broadcastPushNotification } from '../pushService.js';
-import { dispatchNotification } from '../inAppNotificationService.js';
+import { dispatchNotification, sendSseEvent } from '../inAppNotificationService.js';
 
 function escapeRegex(str) {
   return (str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -552,16 +552,26 @@ export default async function ticketsRoutes(fastify, options) {
   // GET /api/tickets/broadcasts/all - List company broadcast announcements
   fastify.get('/broadcasts/all', { preHandler: [verifyAuth] }, async (request, reply) => {
     const broadcasts = await getRows('Broadcasts');
-    broadcasts.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    return { broadcasts };
+    const active = broadcasts.filter(b => b.is_active !== false && b.is_active !== 'false');
+    active.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    return { broadcasts: active };
   });
 
-  // POST /api/tickets/broadcasts - Admin post broadcast announcement
+  // POST /api/tickets/broadcasts - Admin post broadcast announcement with image / category
   fastify.post('/broadcasts', { preHandler: [verifyAdmin] }, async (request, reply) => {
-    const { title, content, priority } = request.body || {};
+    const {
+      title,
+      content,
+      priority = 'Normal',
+      image_url = null,
+      category = 'announcement',
+      action_label = null,
+      action_url = null,
+      theme_color = null
+    } = request.body || {};
 
-    if (!title || !content) {
-      return reply.status(400).send({ error: 'Title and content are required for broadcast.' });
+    if (!title?.trim() || !content?.trim()) {
+      return reply.status(400).send({ error: 'Title and message content are required for broadcast.' });
     }
 
     const newBroadcast = {
@@ -569,6 +579,12 @@ export default async function ticketsRoutes(fastify, options) {
       title: title.trim(),
       content: content.trim(),
       priority: priority || 'Normal',
+      image_url: image_url ? image_url.trim() : null,
+      category: category ? category.trim().toLowerCase() : 'announcement',
+      action_label: action_label ? action_label.trim() : null,
+      action_url: action_url ? action_url.trim() : null,
+      theme_color: theme_color ? theme_color.trim() : null,
+      is_active: true,
       created_by_id: request.user.id,
       created_by_name: request.user.name,
       created_at: new Date().toISOString()
@@ -576,15 +592,21 @@ export default async function ticketsRoutes(fastify, options) {
 
     const saved = await addRow('Broadcasts', newBroadcast);
 
-    // Real-Time In-App & Push broadcast to ALL employees
+    // Real-Time SSE broadcast to ALL active tabs / dashboards
+    sendSseEvent('ALL', 'data_update', {
+      type: 'broadcast_created',
+      broadcast: saved
+    });
+
+    // Real-Time In-App & Web Push broadcast to ALL employees
     dispatchNotification({
       recipientId: 'ALL',
       title: title.trim(),
       message: content.trim().slice(0, 160),
       type: 'broadcast',
-      targetTab: 'announcements',
-      targetUrl: '/?tab=announcements',
-      metadata: { broadcastId: saved.id, priority: saved.priority },
+      targetTab: 'dashboard',
+      targetUrl: '/?tab=dashboard',
+      metadata: { broadcastId: saved.id, priority: saved.priority, category: saved.category, imageUrl: saved.image_url },
       sendPush: true,
       senderRole: request.user?.role || 'admin',
       isCrud: false
@@ -593,6 +615,25 @@ export default async function ticketsRoutes(fastify, options) {
     return {
       message: 'Company announcement broadcasted successfully.',
       broadcast: saved
+    };
+  });
+
+  // DELETE /api/tickets/broadcasts/:id - Admin delete/retract broadcast
+  fastify.delete('/broadcasts/:id', { preHandler: [verifyAdmin] }, async (request, reply) => {
+    const { id } = request.params;
+    const deleted = await deleteRow('Broadcasts', 'id', id);
+    if (!deleted) {
+      return reply.status(404).send({ error: 'Broadcast not found.' });
+    }
+
+    sendSseEvent('ALL', 'data_update', {
+      type: 'broadcast_deleted',
+      id
+    });
+
+    return {
+      success: true,
+      message: 'Broadcast removed successfully.'
     };
   });
 }

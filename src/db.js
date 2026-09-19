@@ -108,7 +108,7 @@ const TABLE_HEADERS = {
   Holidays: ['id', 'date', 'name', 'type', 'created_by', 'created_at'],
   Support_Tickets: ['id', 'ticket_number', 'category', 'subject', 'description', 'priority', 'status', 'creator_id', 'creator_name', 'assigned_to_id', 'assigned_to_name', 'resolution_notes', 'resolved_at', 'created_at', 'updated_at'],
   Ticket_Messages: ['id', 'ticket_id', 'sender_id', 'sender_name', 'sender_role', 'message', 'attachment_url', 'is_internal_note', 'created_at'],
-  Broadcasts: ['id', 'title', 'content', 'priority', 'created_by_id', 'created_by_name', 'created_at'],
+  Broadcasts: ['id', 'title', 'content', 'priority', 'image_url', 'category', 'action_label', 'action_url', 'theme_color', 'is_active', 'created_by_id', 'created_by_name', 'created_at'],
   Push_Subscriptions: ['id', 'employee_id', 'endpoint', 'p256dh', 'auth', 'user_agent', 'created_at']
 };
 
@@ -578,6 +578,12 @@ async function initTables() {
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS performance_gaps TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS strategic_suggestions TEXT;`,
     `ALTER TABLE ai_reports ADD COLUMN IF NOT EXISTS next_month_roadmap TEXT;`,
+    `ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS image_url TEXT;`,
+    `ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS category VARCHAR(50) DEFAULT 'announcement';`,
+    `ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS action_label VARCHAR(100);`,
+    `ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS action_url TEXT;`,
+    `ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS theme_color VARCHAR(30);`,
+    `ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;`,
     `UPDATE employees SET employment_type = 'part_time' WHERE LOWER(employment_type) = 'internship';`,
     `UPDATE employees SET employment_type = 'part_time' WHERE LOWER(email) = 'praveenshazusoft@gmail.com';`
   ];
