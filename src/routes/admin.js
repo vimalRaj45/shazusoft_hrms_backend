@@ -1,5 +1,5 @@
 import { getRows, addRow, updateRow, deleteRow, getStatus, getLeavePolicy, updateLeavePolicy, setSystemSetting } from '../db.js';
-import { verifyAdmin, hashPassword } from '../auth.js';
+import { verifyAdmin, verifyAuth, hashPassword } from '../auth.js';
 import { runtimeSettings, saveOfficeTimings } from '../config.js';
 import { format } from 'date-fns';
 import { formatTime12h, timeTo24h, getTodayDateStr } from '../utils/dateTime.js';
